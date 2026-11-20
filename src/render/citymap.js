@@ -2,7 +2,17 @@
 
 import { clamp, TAU } from '../core/math.js';
 import { shade } from '../core/color.js';
-import { DISTRICT_COLORS, districtAt, MAP_H, MAP_W, ROAD_PRIORITY, ROADS, TILE } from '../data/city.js';
+import {
+  BEACHES,
+  DISTRICT_COLORS,
+  districtAt,
+  MAP_H,
+  MAP_W,
+  PARKINGS,
+  ROAD_PRIORITY,
+  ROADS,
+  TILE,
+} from '../data/city.js';
 import { grid, index } from '../world/map.js';
 import { Style, Tile } from '../world/tiles.js';
 import { ctx, disc, fitText, outlinedText, pixelFont, screen, UI_FONT } from './canvas.js';
@@ -157,7 +167,18 @@ function drawMarker(m, x, y, big) {
     return;
   }
   ctx.fillStyle = m.color;
-  if (m.kind === 'pizzeria') {
+  if (m.kind === 'garage') {
+    ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+    ctx.strokeRect(x - r, y - r, 2 * r, 2 * r);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.55, 0, TAU);
+    ctx.fill();
+    ctx.fillStyle = m.color;
+    ctx.beginPath();
+    ctx.arc(x, y, r * 0.25, 0, TAU);
+    ctx.fill();
+  } else if (m.kind === 'pizzeria') {
     ctx.beginPath();
     ctx.arc(x, y, r + 1, 0, TAU);
     ctx.fill();
@@ -383,7 +404,31 @@ function drawDistrictNames(X, Y, k) {
   }
   ctx.font = `italic 600 ${Math.round(clamp(k * 2.4, 12, 22))}px Georgia,serif`;
   ctx.fillStyle = 'rgba(30,80,120,.7)';
-  ctx.fillText('Golfo di Napoli', X(70), Y(106));
+  ctx.fillText('Golfo di Napoli', X(138), Y(106));
+  ctx.font = `italic 600 ${Math.round(clamp(k * 1.6, 10, 16))}px Georgia,serif`;
+  ctx.fillStyle = 'rgba(150,100,30,.85)';
+  for (const b of BEACHES) {
+    const [x0, y0, x1, y1] = b.rect;
+    ctx.fillText(b.name, X((x0 + x1) / 2), Y(y1 - 3.5));
+  }
+}
+
+/** Blue "P" signs on the car parks. */
+function drawParkingSigns(X, Y, k) {
+  if (k < 3) return;
+  const r = clamp(k * 0.9, 5, 9);
+  ctx.font = `bold ${Math.round(r * 1.5)}px ${UI_FONT}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const p of PARKINGS) {
+    const [x0, y0, x1, y1] = p.rect;
+    const x = X((x0 + x1) / 2);
+    const y = Y((y0 + y1) / 2);
+    ctx.fillStyle = '#2e63b8';
+    ctx.fillRect(x - r, y - r, 2 * r, 2 * r);
+    ctx.fillStyle = '#fff';
+    ctx.fillText('P', x, y + 1);
+  }
 }
 
 function drawLegend(entries) {
@@ -424,8 +469,14 @@ export function drawStreetMap(player, markers) {
   ctx.imageSmoothingEnabled = k < 4;
   ctx.drawImage(districtImage, X(0), Y(0), MAP_W * k, MAP_H * k);
   ctx.imageSmoothingEnabled = true;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(X(0), Y(0), MAP_W * k, MAP_H * k); // le strade che escono dalla città finiscono al bordo
+  ctx.clip();
   drawRoadNetwork(ctx, X, Y, k, 2.4);
   drawStreetNames(X, Y, k);
+  ctx.restore();
+  drawParkingSigns(X, Y, k);
   drawDistrictNames(X, Y, k);
 
   for (const m of markers) drawMarker(m, X(m.x / TILE), Y(m.y / TILE), true);
@@ -469,6 +520,18 @@ export function drawStreetMap(player, markers) {
     ['Vicolo', roadSwatch(ROAD_STYLE.vicolo)],
     ['Pizzeria', (x, y) => drawMarker({ kind: 'pizzeria', color: '#c8262b' }, x + 14, y, false)],
     ['Cliente da servire', (x, y) => drawMarker({ kind: 'stop', color: '#ffd23f' }, x + 14, y, false)],
+    ['Officina (Vespa)', (x, y) => drawMarker({ kind: 'garage', color: '#2b8fd6' }, x + 14, y, false)],
     ['Vespa libera', (x, y) => drawMarker({ kind: 'vespa' }, x + 14, y, false)],
+    [
+      'Parcheggio',
+      (x, y) => {
+        ctx.fillStyle = '#2e63b8';
+        ctx.fillRect(x + 9, y - 5, 10, 10);
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold 9px ${UI_FONT}`;
+        ctx.textAlign = 'center';
+        ctx.fillText('P', x + 14, y + 1);
+      },
+    ],
   ]);
 }

@@ -3,18 +3,26 @@
 // where Gennaro should go next.
 
 import { clock, euro, plural } from '../core/format.js';
-import { MENU, PIZZERIAS, RULES, SURNAMES } from '../data/pizza.js';
+import { GARAGE, MENU, PIZZERIAS, RULES, SURNAMES } from '../data/pizza.js';
 import { snapToWalkable } from '../world/map.js';
 import { sfx } from '../audio.js';
 import { html, queueDialog, raw, showDialog } from '../ui/dialog.js';
 import { showBanner, toast } from '../render/hud.js';
 import { STOP_COLOR } from '../render/delivery.js';
-import { Career, orderValue } from './career.js';
+import { Career, OrderKind, orderValue } from './career.js';
 import { findAddress } from './addresses.js';
 
 export const PIZZERIA_RANGE = 44;
 
 for (const p of PIZZERIAS) p.pos = snapToWalkable(...p.at);
+GARAGE.pos = snapToWalkable(...GARAGE.at);
+export { GARAGE };
+
+export const FOOTBALLER_COLOR = '#5ec8ff';
+export const SIDE_COLOR = '#ff9f40';
+/** Colour of a customer's beacon, by kind of order. */
+export const stopColor = (order) =>
+  order.kind === OrderKind.FOOTBALLER ? FOOTBALLER_COLOR : order.kind === OrderKind.SIDE ? SIDE_COLOR : STOP_COLOR;
 
 export const career = new Career({
   pizzerias: PIZZERIAS,
@@ -42,6 +50,12 @@ export function nearestPizzeria(x, y, range = PIZZERIA_RANGE) {
   return PIZZERIAS.find((p) => Math.hypot(p.pos[0] - x, p.pos[1] - y) < range) ?? null;
 }
 
+export const nearGarage = (x, y, range = PIZZERIA_RANGE + 16) =>
+  Math.hypot(GARAGE.pos[0] - x, GARAGE.pos[1] - y) < range;
+
+/** The footballer waiting in the street for his pizza (null if none). */
+export const footballerOrder = () => career.activeOrders.find((o) => o.kind === OrderKind.FOOTBALLER) ?? null;
+
 /** Undelivered stops whose pizzas Gennaro is carrying. */
 export const pendingStops = () =>
   career.activeOrders
@@ -59,7 +73,11 @@ const needsShop = () =>
 
 /** Where to go now: the nearest customer door, the pizzeria, or the next pizzeria to ask for a job. */
 export function currentObjective(player) {
-  const targets = pendingStops().map(({ stop }) => ({ x: stop.address.x, y: stop.address.y, color: STOP_COLOR }));
+  const targets = pendingStops().map(({ order, stop }) => ({
+    x: stop.address.x,
+    y: stop.address.y,
+    color: stopColor(order),
+  }));
   const shop = career.job?.pizzeria;
   if (shop && needsShop()) targets.push({ x: shop.pos[0], y: shop.pos[1], color: '#ffffff' });
   if (career.status === 'unemployed')
@@ -88,12 +106,13 @@ export function jobMarkers(t) {
       pulse: wanted ? t : 0,
     };
   });
+  markers.push({ kind: 'garage', x: GARAGE.pos[0], y: GARAGE.pos[1], color: GARAGE.color, label: GARAGE.name });
   for (const { order, stop } of pendingStops())
     markers.push({
       kind: 'stop',
       x: stop.address.x,
       y: stop.address.y,
-      color: STOP_COLOR,
+      color: stopColor(order),
       text: String(stop.pizzas.length),
       label: `${stop.family} · #${order.number}`,
       pulse: t,
@@ -118,29 +137,53 @@ const rulesText = () =>
     Ogni ${clock(RULES.orderInterval)} parte un ordine da 3 a 7 pizze per tre famiglie (se torni qui a mani vuote prima,
     ne arriva uno in pochi secondi): hai ${clock(RULES.orderTime)} per ritirarle e consegnarle. Paga:
     ${euro(RULES.basePay)} a consegna se servi almeno una famiglia + ${RULES.commission * 100}% del valore consegnato +
-    mance (5-20%) entro il primo minuto. Ogni pizza persa: 1% di rischio licenziamento.
+    mance (5-20%) per ogni famiglia servita entro un minuto dal ritiro o dalla consegna precedente. Ogni pizza persa: 1%
+    di rischio licenziamento.
   </p>`;
+
+const sideJobText = () =>
+  html`<p>«Guagliò, tengo ${RULES.sideJob.pizzas} pizze pe' na famiglia luntana assaje. Te le puorte tu?»</p>
+    <p class="small">
+      Consegna extra: ${clock(RULES.sideJob.time)} di tempo, paga come una consegna normale. Il tuo datore di lavoro non
+      ne saprà niente.
+    </p>`;
 
 export function openPizzeria(p) {
   const close = { label: 'Arrivederci', cancel: true };
   const show = (body, buttons) =>
     showDialog({ title: p.name.toUpperCase(), color: p.color, body, buttons: [...buttons, close] });
 
-  switch (career.ask(p.id)) {
+  const standing = career.ask(p.id);
+  // Le altre pizzerie, una volta su quattro, hanno una consegna extra da affidarti.
+  const asked = ['hiring', 'notHiring', 'busy'].includes(standing) && career.canAskSideJob(p.id);
+  const side = asked && career.askSideJob(p.id);
+  const sideBody = side
+    ? sideJobText()
+    : asked
+      ? html`<p class="small">Consegne extra da fare? Pe' mo' no. Ripassa più tardi.</p>`
+      : '';
+  const sideButtons = side ? [{ label: 'Porta le pizze', run: () => career.takeSideJob(p.id) }] : [];
+
+  switch (standing) {
     case 'hiring':
       return show(
         html`<p>«Guagliò, ci serve proprio un fattorino!»</p>
-          ${raw(rulesText())}${raw(menuTable())}`,
-        [{ label: 'Fatti assumere', run: () => career.hire(p.id) }],
+          ${raw(rulesText())}${raw(menuTable())}${raw(sideBody)}`,
+        [{ label: 'Fatti assumere', run: () => career.hire(p.id) }, ...sideButtons],
       );
     case 'notHiring':
       return show(
         html`<p>«Mi dispiace, pe' mo' nun cercammo a nisciuno.»</p>
-          <p class="small">Prova nelle altre pizzerie, o ripassa domani.</p>`,
-        [],
+          <p class="small">Prova nelle altre pizzerie, o ripassa domani.</p>
+          ${raw(sideBody)}`,
+        sideButtons,
       );
     case 'busy':
-      return show(html`<p>«Ma tu nun faje già 'e cunsegne p' ${career.pizzeria(career.employer).name}?»</p>`, []);
+      return show(
+        html`<p>«Ma tu nun faje già 'e cunsegne p' ${career.pizzeria(career.employer).name}?»</p>
+          ${raw(sideBody)}`,
+        sideButtons,
+      );
     case 'banned':
       return show(
         html`<p>«Tu? Ccà nun ce mettere pede, almeno pe' nu poco!»</p>
@@ -181,6 +224,35 @@ export function openPizzeria(p) {
       );
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// The mechanic in Fuorigrotta (press E at the door, with the Vespa)
+// ---------------------------------------------------------------------------
+export function openGarage(vespa) {
+  const { cost, speed } = RULES.tuning;
+  const faster = `${Math.round((speed - 1) * 100)}%`;
+  const close = { label: 'Arrivederci', cancel: true };
+  const show = (body, buttons = []) =>
+    showDialog({ title: GARAGE.name.toUpperCase(), color: GARAGE.color, body, buttons: [...buttons, close] });
+
+  if (!vespa)
+    return show(
+      html`<p>«E 'o motorino addò sta? Purtammillo ccà e t'o faccio vulà!»</p>
+        <p class="small">Torna in Vespa: per ${euro(cost)} la modifico e va il ${faster} più veloce.</p>`,
+    );
+  if (career.isTuned(vespa))
+    return show(html`<p>«Chesta Vespa già l'aggio fatta io. Cchiù veloce 'e accussì nun se po'!»</p>`);
+  if (career.wallet < cost)
+    return show(
+      html`<p>«Pe' te fa' 'a Vespa ce vonno ${euro(cost)}, e tu ne tieni ${euro(career.wallet)}.»</p>
+        <p class="small">Torna quando hai messo da parte i soldi.</p>`,
+    );
+  return show(
+    html`<p>«Marmitta nova, carburatore alleggerito... e chesta Vespa vola!»</p>
+      <p class="small">Costa ${euro(cost)}: la Vespa con cui sei arrivato andrà il ${faster} più veloce.</p>`,
+    [{ label: `Modifica (${euro(cost)})`, run: () => career.tune(vespa) }],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +297,7 @@ function dayReport({ ledger, earned, living, wallet, daysInRed }) {
       <table class="menu">
         ${raw(row(`Fisso (${paid} × ${euro(RULES.basePay)})`, euro(pay.base)))}
         ${raw(row(`Percentuale ${RULES.commission * 100}%`, euro(pay.commission)))} ${raw(row('Mance', euro(pay.tips)))}
+        ${raw(pay.bonus ? row('Bonus del calciatore', euro(pay.bonus)) : '')}
         ${raw(row('Guadagno della giornata', euro(earned), 'total'))} ${raw(row('Spese per vivere', euro(-living)))}
         ${raw(row('Nel portafoglio', euro(wallet), 'total'))}
       </table>
@@ -259,13 +332,44 @@ function handleEvent(e) {
     case 'orderCreated': {
       const o = e.order;
       sfx.newOrder();
+      if (o.kind === OrderKind.FOOTBALLER) {
+        showBanner('Un calciatore del Napoli!', 4);
+        toast(
+          `Un calciatore del Napoli ti ha chiesto una pizza: ${clock(RULES.footballer.time)} per portargliela!`,
+          FOOTBALLER_COLOR,
+          6,
+        );
+      } else if (o.kind === OrderKind.SIDE) {
+        toast(`Consegna extra per ${o.pizzeria.name}: ${o.pizzaCount} pizze, lontano!`, SIDE_COLOR, 4.5);
+      } else {
+        toast(
+          `Nuovo ordine #${o.number}: ${o.pizzaCount} pizze, ${clock(RULES.orderTime)} per consegnarle!`,
+          STOP_COLOR,
+          4.5,
+        );
+      }
+      break;
+    }
+    case 'boost': {
+      const pct = Math.round((e.multiplier - 1) * 100);
+      sfx.coins();
+      showBanner(`Bonus +${pct}%`, 3.5);
       toast(
-        `Nuovo ordine #${o.number}: ${o.pizzaCount} pizze, ${clock(RULES.orderTime)} per consegnarle!`,
-        STOP_COLOR,
-        4.5,
+        `Il calciatore ringrazia: guadagni +${pct}% fino alla fine del giorno ${Math.round(e.until / RULES.dayLength)}!`,
+        FOOTBALLER_COLOR,
+        6,
       );
       break;
     }
+    case 'tuned':
+      sfx.coins();
+      showBanner('Vespa modificata!', 3.5);
+      toast(
+        `Spesi ${euro(e.cost)}: ora la Vespa va il ${Math.round((RULES.tuning.speed - 1) * 100)}% più veloce`,
+        '#5ec8ff',
+        5,
+      );
+      break;
     case 'earlyOrder':
       toast(`Sei tornato presto: nuovo ordine tra ${Math.ceil(e.in)} secondi`, '#fff', 4);
       break;
@@ -276,12 +380,21 @@ function handleEvent(e) {
     case 'delivered': {
       const { stop } = e;
       sfx.delivered();
+      if (e.order.kind === OrderKind.FOOTBALLER) {
+        toast('Pizza consegnata al calciatore: offre la casa! «Grazie, guagliò!»', FOOTBALLER_COLOR, 4);
+        break;
+      }
       const tip = stop.tip ? ` · mancia ${euro(stop.tip)}!` : '';
       toast(`Consegnato a fam. ${stop.family} (${euro(orderValue(stop))})${tip}`, stop.tip ? '#39ff88' : '#fff', 4);
       break;
     }
     case 'orderClosed':
-      if (e.missed) {
+      if (e.order.kind === OrderKind.FOOTBALLER) {
+        if (e.missed) {
+          sfx.failed();
+          toast('Il calciatore è andato via senza pizza: niente bonus', '#ff5b4b', 4.5);
+        }
+      } else if (e.missed) {
         sfx.failed();
         toast(`Ordine #${e.order.number} scaduto: ${plural(e.missed, 'pizza persa', 'pizze perse')}`, '#ff5b4b', 4.5);
       } else {

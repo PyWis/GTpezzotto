@@ -1,3 +1,5 @@
+import { MAP_W, TILE } from './city.js';
+
 /** Il menù, uguale in tutte le pizzerie. */
 export const MENU = [
   { nome: 'Margherita', prezzo: 8.0 },
@@ -52,8 +54,8 @@ export const RULES = Object.freeze({
   orderInterval: 150, // ogni 2 minuti e mezzo parte una nuova consegna…
   earlyOrderDelay: [5, 15], // …ma se torni in pizzeria a mani vuote ne arriva una dopo 5-15 s
   orderTime: 180, // 3 minuti per consegnare tutto
-  tipWindow: 60, // entro il primo minuto il cliente lascia la mancia…
-  tipRange: [0.05, 0.2], // …dal 5% al 20% del suo ordine
+  tipWindow: 60, // la famiglia servita entro un minuto (dal ritiro o dalla consegna precedente) lascia la mancia…
+  tipRange: [0.05, 0.2], // …dal 5% al 20% della sua parte d'ordine
   pizzasPerOrder: [3, 7],
   familiesPerOrder: 3,
   maxPizzasPerFamily: 4,
@@ -64,4 +66,26 @@ export const RULES = Object.freeze({
   rehireAfterDays: 10, // dopo che te ne vai, quella pizzeria potrebbe riprenderti
   livingCost: [100, 200], // € al giorno per vivere
   maxDaysInRed: 3, // giorni di fila sotto zero prima del game over
+  sideJob: {
+    chance: 0.25, // un'altra pizzeria ha una consegna da affidarti
+    cooldown: 150, // s prima di poter richiedere alla stessa pizzeria
+    pizzas: 5, // per una sola famiglia…
+    minDistance: (MAP_W * TILE) / 2, // …ad almeno metà mappa di distanza (px)
+    time: 180,
+  },
+  footballer: {
+    chance: 1 / 50, // al posto di un ordine normale
+    name: 'Calciatore del Napoli',
+    time: 90,
+    maxDistance: 60 * TILE, // px: abita (o si allena) non troppo lontano
+    bonus: 0.2, // +20% su tutti i guadagni…
+    bonusDays: 2, // …per i 2 giorni successivi (si accumula)
+  },
+  tuning: {
+    cost: 1000, // l'officina di Fuorigrotta
+    speed: 1.2, // la Vespa modificata va il 20% più veloce
+  },
 });
+
+/** L'officina di Fuorigrotta dove si modifica la Vespa. `at` è in coordinate-tile. */
+export const GARAGE = { name: "Officina 'O Turbo", color: '#2b8fd6', at: [70, 54] };

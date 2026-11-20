@@ -1,6 +1,7 @@
 import { clamp, distToSegment, hash, TAU } from '../core/math.js';
 import { shade } from '../core/color.js';
 import {
+  BEACHES,
   BROWNFIELDS,
   CENTRO_ZONE,
   coastY,
@@ -11,6 +12,7 @@ import {
   MAP_H,
   MAP_W,
   NISIDA,
+  PARKINGS,
   PARKS,
   PLAZAS,
   QUAYS,
@@ -150,16 +152,23 @@ function buildMap() {
 
   const [nx, ny] = NISIDA.center;
   fillWhere(
-    0,
-    0,
-    15,
-    MAP_H - 1,
+    nx - NISIDA.radius - 1,
+    ny - NISIDA.radius - 1,
+    nx + NISIDA.radius + 1,
+    ny + NISIDA.radius + 1,
     (x, y) => Math.hypot(x - nx, y - ny) < NISIDA.radius,
     (i) => (tile[i] = Tile.MOUNTAIN),
   );
   fillRect([HILL.x0, HILL.y0, HILL.x1, MAP_H], (i, x, y) => {
     if (y + 0.5 < coastY(x + 0.5) - 6 && tile[i] === Tile.BUILDING) tile[i] = Tile.MOUNTAIN;
   });
+  for (const parking of PARKINGS) {
+    parking.plaza = PLAZAS.push({ name: parking.name, rect: parking.rect, parking: true }) - 1;
+    fillRect(parking.rect, (i) => {
+      tile[i] = Tile.PLAZA;
+      grid.plaza[i] = parking.plaza;
+    });
+  }
 
   // Roads: rasterise each polyline; wider classes win where they overlap.
   ROADS.forEach((road, ri) => {
@@ -254,6 +263,10 @@ function buildMap() {
   }
 
   addSidewalks();
+  for (const b of BEACHES)
+    fillRect(b.rect, (i) => {
+      if (tile[i] === Tile.BUILDING) tile[i] = Tile.SAND;
+    });
   addCoast();
   addCurbs();
   assignBuildings();
@@ -406,9 +419,17 @@ export const palette = {
 // ---------------------------------------------------------------------------
 // Queries. Outside the map the city goes on forever as generic Centro blocks.
 // ---------------------------------------------------------------------------
+/** Ground that carries on past the map edge: the roads leaving town and their pavements. */
+const CONTINUES = new Set([Tile.ROAD, Tile.SIDEWALK, Tile.SAND]);
+
 export function tileAt(x, y) {
   if (inBounds(x, y)) return grid.tile[index(x, y)];
-  return y + 0.5 > coastY(clamp(x, 0, MAP_W) + 0.5) || y >= MAP_H ? Tile.SEA : Tile.BUILDING;
+  if (y + 0.5 > coastY(clamp(x, 0, MAP_W) + 0.5) || y >= MAP_H) return Tile.SEA;
+  // Outside the map, a road that reaches the edge keeps going.
+  const ex = clamp(x, 0, MAP_W - 1);
+  const ey = clamp(y, 0, MAP_H - 1);
+  if ((ex === x || ey === y) && CONTINUES.has(grid.tile[index(ex, ey)])) return grid.tile[index(ex, ey)];
+  return Tile.BUILDING;
 }
 
 export function heightAt(x, y) {
@@ -431,7 +452,10 @@ export function colorAt(x, y) {
 export const isRaised = (x, y) => {
   const t = tileAt(x, y);
   return (
-    t === Tile.BUILDING || t === Tile.LANDMARK || t === Tile.MOUNTAIN || (t === Tile.ROAD && grid.tunnel[index(x, y)])
+    t === Tile.BUILDING ||
+    t === Tile.LANDMARK ||
+    t === Tile.MOUNTAIN ||
+    (t === Tile.ROAD && inBounds(x, y) && grid.tunnel[index(x, y)])
   );
 };
 
@@ -534,7 +558,7 @@ export function placeNameAt(px, py) {
   if (grid.tile[i] === Tile.ROAD) return ROADS[grid.road[i]].name;
   if (grid.tile[i] === Tile.PLAZA) return PLAZAS[grid.plaza[i]].name;
   const inside = ({ rect: [x0, y0, x1, y1] }) => x >= x0 && x < x1 && y >= y0 && y < y1;
-  const area = PARKS.find(inside) ?? QUAYS.find(inside);
+  const area = PARKS.find(inside) ?? QUAYS.find(inside) ?? BEACHES.find(inside);
   if (area) return area.name;
   return nearestStreetName(x, y, 2);
 }
