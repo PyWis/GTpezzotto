@@ -18,7 +18,7 @@ export const PIZZERIAS = [
   { id: 'scugnizzo', name: "'O Scugnizzo", color: '#2f8f4e', at: [171, 49] },
   { id: 'collina', name: 'Pizzeria La Collina', color: '#7b4fb0', at: [125, 27] },
   { id: 'stadio', name: "Pizzeria 'O Stadio", color: '#2f7fd0', at: [60, 63] },
-  { id: 'ferrovia', name: "Pizzeria 'A Ferrovia", color: '#e07b1a', at: [242, 66] },
+  { id: 'Garibaldi', name: "Pizzeria Garibaldi", color: '#e07b1a', at: [242, 66] },
 ];
 
 export const SURNAMES = [
@@ -88,7 +88,7 @@ export const RULES = Object.freeze({
     speed: 1.2, // la Vespa modificata va il 20% più veloce
   },
   wear: {
-    perBump: 0.01, // ogni urto la Vespa perde l'1% della sua velocità (si accumula)
+    perBump: 0.001, // ogni urto la Vespa perde l'1% della sua velocità (si accumula)
     minCondition: 0.5, // più ammaccata di così non va: almeno metà della velocità
     bumpSpeed: 60, // px/s: sotto questa velocità non è un urto
   },
