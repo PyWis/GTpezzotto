@@ -3,7 +3,9 @@
 // where Gennaro should go next.
 
 import { clock, euro, plural } from '../core/format.js';
-import { GARAGE, MENU, PIZZERIAS, RULES, SURNAMES } from '../data/pizza.js';
+import { pick } from '../core/math.js';
+import { STADIUM_GATE, TILE } from '../data/city.js';
+import { GARAGE, MECHANIC_LINES, MENU, PIZZERIAS, REPAIR_SHOP, RULES, SURNAMES } from '../data/pizza.js';
 import { snapToWalkable } from '../world/map.js';
 import { sfx } from '../audio.js';
 import { html, queueDialog, raw, showDialog } from '../ui/dialog.js';
@@ -11,18 +13,35 @@ import { showBanner, toast } from '../render/hud.js';
 import { STOP_COLOR } from '../render/delivery.js';
 import { Career, OrderKind, orderValue } from './career.js';
 import { findAddress } from './addresses.js';
+import { clearSave, readBlessing, saveBlessing } from './save.js';
 
 export const PIZZERIA_RANGE = 44;
 
 for (const p of PIZZERIAS) p.pos = snapToWalkable(...p.at);
 GARAGE.pos = snapToWalkable(...GARAGE.at);
-export { GARAGE };
+REPAIR_SHOP.pos = snapToWalkable(...REPAIR_SHOP.at);
+export { GARAGE, REPAIR_SHOP };
 
 export const FOOTBALLER_COLOR = '#5ec8ff';
 export const SIDE_COLOR = '#ff9f40';
+export const LEGEND_COLOR = '#ffe14d';
+const KIND_COLOR = {
+  [OrderKind.FOOTBALLER]: FOOTBALLER_COLOR,
+  [OrderKind.SIDE]: SIDE_COLOR,
+  [OrderKind.LEGEND]: LEGEND_COLOR,
+};
 /** Colour of a customer's beacon, by kind of order. */
-export const stopColor = (order) =>
-  order.kind === OrderKind.FOOTBALLER ? FOOTBALLER_COLOR : order.kind === OrderKind.SIDE ? SIDE_COLOR : STOP_COLOR;
+export const stopColor = (order) => KIND_COLOR[order.kind] ?? STOP_COLOR;
+
+/** Il centro del campo dello Stadio Maradona: dove aspetta il Dio del Calcio. */
+const [pitchX, pitchY] = STADIUM_GATE.pitch;
+const STADIUM_PITCH = {
+  x: pitchX * TILE,
+  y: pitchY * TILE,
+  street: 'Stadio Diego Armando Maradona',
+  label: 'Stadio Diego Armando Maradona, centrocampo',
+  district: 'Fuorigrotta',
+};
 
 export const career = new Career({
   pizzerias: PIZZERIAS,
@@ -30,6 +49,8 @@ export const career = new Career({
   surnames: SURNAMES,
   rules: RULES,
   findAddress,
+  stadium: STADIUM_PITCH,
+  blessed: readBlessing(),
   onEvent: handleEvent,
 });
 
@@ -52,6 +73,15 @@ export function nearestPizzeria(x, y, range = PIZZERIA_RANGE) {
 
 export const nearGarage = (x, y, range = PIZZERIA_RANGE + 16) =>
   Math.hypot(GARAGE.pos[0] - x, GARAGE.pos[1] - y) < range;
+
+export const nearRepairShop = (x, y, range = PIZZERIA_RANGE + 16) =>
+  Math.hypot(REPAIR_SHOP.pos[0] - x, REPAIR_SHOP.pos[1] - y) < range;
+
+/** The secret mission, while it is on (null otherwise). */
+export const legendOrder = () => career.activeOrders.find((o) => o.kind === OrderKind.LEGEND) ?? null;
+
+/** A line the mechanic says when Gennaro turns up: `repair` (Gianturco) or `tuning` (Fuorigrotta). */
+export const mechanicLine = (shop) => pick(MECHANIC_LINES[shop]);
 
 /** The footballer waiting in the street for his pizza (null if none). */
 export const footballerOrder = () => career.activeOrders.find((o) => o.kind === OrderKind.FOOTBALLER) ?? null;
@@ -80,6 +110,10 @@ export function currentObjective(player) {
   }));
   const shop = career.job?.pizzeria;
   if (shop && needsShop()) targets.push({ x: shop.pos[0], y: shop.pos[1], color: '#ffffff' });
+  // Pizze da ritirare in un'altra pizzeria (la missione segreta, da disoccupato).
+  for (const o of career.activeOrders)
+    if (!o.pickedUp && o.pizzeria !== shop)
+      targets.push({ x: o.pizzeria.pos[0], y: o.pizzeria.pos[1], color: stopColor(o) });
   if (career.status === 'unemployed')
     for (const p of PIZZERIAS.filter(worthAsking)) targets.push({ x: p.pos[0], y: p.pos[1], color: '#ffd23f' });
   let best = null;
@@ -95,7 +129,9 @@ export function currentObjective(player) {
 export function jobMarkers(t) {
   const markers = PIZZERIAS.map((p) => {
     const standing = career.standingWith(p.id);
-    const wanted = (career.status === 'unemployed' && worthAsking(p)) || (standing === 'employer' && needsShop());
+    const pickup = career.activeOrders.some((o) => !o.pickedUp && o.pizzeria === p);
+    const wanted =
+      (career.status === 'unemployed' && worthAsking(p)) || (standing === 'employer' && needsShop()) || pickup;
     return {
       kind: 'pizzeria',
       x: p.pos[0],
@@ -106,7 +142,8 @@ export function jobMarkers(t) {
       pulse: wanted ? t : 0,
     };
   });
-  markers.push({ kind: 'garage', x: GARAGE.pos[0], y: GARAGE.pos[1], color: GARAGE.color, label: GARAGE.name });
+  for (const g of [GARAGE, REPAIR_SHOP])
+    markers.push({ kind: 'garage', x: g.pos[0], y: g.pos[1], color: g.color, label: g.name });
   for (const { order, stop } of pendingStops())
     markers.push({
       kind: 'stop',
@@ -137,15 +174,15 @@ const rulesText = () =>
     Ogni ${clock(RULES.orderInterval)} parte un ordine da 3 a 7 pizze per tre famiglie (se torni qui a mani vuote prima,
     ne arriva uno in pochi secondi): hai ${clock(RULES.orderTime)} per ritirarle e consegnarle. Paga:
     ${euro(RULES.basePay)} a consegna se servi almeno una famiglia + ${RULES.commission * 100}% del valore consegnato +
-    mance (5-20%) per ogni famiglia servita entro un minuto dal ritiro o dalla consegna precedente. Ogni pizza persa: 1%
-    di rischio licenziamento.
+    mance (5-20%) per ogni famiglia servita entro un minuto dal ritiro o dalla consegna precedente. Ogni pizza persa:
+    ${Math.round(RULES.firingChancePerPizza * 100)}% di rischio licenziamento.
   </p>`;
 
 const sideJobText = () =>
   html`<p>«Guagliò, tengo ${RULES.sideJob.pizzas} pizze pe' na famiglia luntana assaje. Te le puorte tu?»</p>
     <p class="small">
-      Consegna extra: ${clock(RULES.sideJob.time)} di tempo, paga come una consegna normale. Il tuo datore di lavoro non
-      ne saprà niente.
+      Consegna extra: ${clock(RULES.sideJob.time)} di tempo, paga il doppio di una consegna normale. Il tuo datore di
+      lavoro non ne saprà niente.
     </p>`;
 
 export function openPizzeria(p) {
@@ -233,8 +270,14 @@ export function openGarage(vespa) {
   const { cost, speed } = RULES.tuning;
   const faster = `${Math.round((speed - 1) * 100)}%`;
   const close = { label: 'Arrivederci', cancel: true };
+  const line = html`<p class="small">«${mechanicLine('tuning')}»</p>`;
   const show = (body, buttons = []) =>
-    showDialog({ title: GARAGE.name.toUpperCase(), color: GARAGE.color, body, buttons: [...buttons, close] });
+    showDialog({
+      title: GARAGE.name.toUpperCase(),
+      color: GARAGE.color,
+      body: body + line,
+      buttons: [...buttons, close],
+    });
 
   if (!vespa)
     return show(
@@ -253,6 +296,42 @@ export function openGarage(vespa) {
       <p class="small">Costa ${euro(cost)}: la Vespa con cui sei arrivato andrà il ${faster} più veloce.</p>`,
     [{ label: `Modifica (${euro(cost)})`, run: () => career.tune(vespa) }],
   );
+}
+
+// ---------------------------------------------------------------------------
+// The mechanic in Via Gianturco: the only one who repairs a dented Vespa
+// ---------------------------------------------------------------------------
+export const conditionPct = (vespa) => Math.round((vespa?.condition ?? 1) * 100);
+
+export function openRepairShop(vespa) {
+  const close = { label: 'Arrivederci', cancel: true };
+  const line = html`<p>«${mechanicLine('repair')}»</p>`;
+  const show = (body, buttons = []) =>
+    showDialog({
+      title: REPAIR_SHOP.name.toUpperCase(),
+      color: REPAIR_SHOP.color,
+      body: line + body,
+      buttons: [...buttons, close],
+    });
+
+  if (!vespa)
+    return show(
+      html`<p class="small">
+        Porta qui la Vespa: ogni urto la rallenta un po', e solo qui in Via Gianturco si ripara.
+      </p>`,
+    );
+  const cost = career.repairCost(vespa);
+  if (cost <= 0) return show(html`<p class="small">«Chesta Vespa sta bona accussì. Nun tocco niente.»</p>`);
+  const state = html`<p class="small">
+    La Vespa va al ${conditionPct(vespa)}% della sua velocità. Ripararla costa ${euro(cost)}
+    (${euro(RULES.repair.costPerPoint)} per ogni punto).
+  </p>`;
+  if (career.wallet < cost)
+    return show(
+      html`${raw(state)}
+        <p class="small">Hai ${euro(career.wallet)}: torna quando hai i soldi.</p>`,
+    );
+  return show(state, [{ label: `Ripara (${euro(cost)})`, run: () => career.repair(vespa) }]);
 }
 
 // ---------------------------------------------------------------------------
@@ -297,7 +376,7 @@ function dayReport({ ledger, earned, living, wallet, daysInRed }) {
       <table class="menu">
         ${raw(row(`Fisso (${paid} × ${euro(RULES.basePay)})`, euro(pay.base)))}
         ${raw(row(`Percentuale ${RULES.commission * 100}%`, euro(pay.commission)))} ${raw(row('Mance', euro(pay.tips)))}
-        ${raw(pay.bonus ? row('Bonus del calciatore', euro(pay.bonus)) : '')}
+        ${raw(pay.bonus ? row('Bonus (extra e calciatore)', euro(pay.bonus)) : '')}
         ${raw(row('Guadagno della giornata', euro(earned), 'total'))} ${raw(row('Spese per vivere', euro(-living)))}
         ${raw(row('Nel portafoglio', euro(wallet), 'total'))}
       </table>
@@ -339,6 +418,19 @@ function handleEvent(e) {
           FOOTBALLER_COLOR,
           6,
         );
+      } else if (o.kind === OrderKind.LEGEND) {
+        showBanner('Richiesta speciale', 4);
+        const where = o.pizzeria.id === career.employer ? 'in pizzeria' : `da ${o.pizzeria.name}`;
+        queueDialog({
+          title: 'UNA RICHIESTA MISTERIOSA',
+          color: LEGEND_COLOR,
+          body: html`<p>«Guagliò, nu calciatore vò na pizza... e t'aspetta <b>dint' 'o Stadio</b>!»</p>
+            <p class="small">
+              Ritira la pizza ${where} e portala al centrocampo dello Stadio Maradona: i cancelli dal lato di Piazzale
+              Tecchio sono aperti. Hai ${clock(RULES.legend.time)}.
+            </p>`,
+          buttons: [{ label: 'Jamme!', cancel: true, badge: '↵' }],
+        });
       } else if (o.kind === OrderKind.SIDE) {
         toast(`Consegna extra per ${o.pizzeria.name}: ${o.pizzaCount} pizze, lontano!`, SIDE_COLOR, 4.5);
       } else {
@@ -370,6 +462,24 @@ function handleEvent(e) {
         5,
       );
       break;
+    case 'blessed':
+      saveBlessing();
+      queueDialog({
+        title: 'MAGLIA AZZURRA',
+        color: LEGEND_COLOR,
+        body: html`<p>La maglia rossa di Gennaro è diventata <b>azzurra</b>.</p>
+          <p class="small">
+            Da oggi ogni calciatore che servi ti dà ${euro(RULES.footballer.blessedTip)} in più. Per sempre, anche nelle
+            partite nuove.
+          </p>`,
+        buttons: [{ label: 'Forza Napoli!', cancel: true, badge: '↵' }],
+      });
+      break;
+    case 'repaired':
+      sfx.coins();
+      showBanner('Vespa riparata!', 3);
+      toast(`Spesi ${euro(e.cost)}: la Vespa è tornata come nuova`, REPAIR_SHOP.color, 4.5);
+      break;
     case 'earlyOrder':
       toast(`Sei tornato presto: nuovo ordine tra ${Math.ceil(e.in)} secondi`, '#fff', 4);
       break;
@@ -381,7 +491,19 @@ function handleEvent(e) {
       const { stop } = e;
       sfx.delivered();
       if (e.order.kind === OrderKind.FOOTBALLER) {
-        toast('Pizza consegnata al calciatore: offre la casa! «Grazie, guagliò!»', FOOTBALLER_COLOR, 4);
+        toast(
+          stop.tip
+            ? `«Tu si' chillo d' 'o Dio d' 'o Calcio!» Il calciatore ti dà ${euro(stop.tip)}`
+            : 'Pizza consegnata al calciatore: offre la casa! «Grazie, guagliò!»',
+          FOOTBALLER_COLOR,
+          4,
+        );
+        break;
+      }
+      if (e.order.kind === OrderKind.LEGEND) {
+        sfx.coins();
+        showBanner('Il Dio del Calcio', 4);
+        toast(`Mancia extra di ${euro(stop.tip)}!`, LEGEND_COLOR, 6);
         break;
       }
       const tip = stop.tip ? ` · mancia ${euro(stop.tip)}!` : '';
@@ -389,7 +511,12 @@ function handleEvent(e) {
       break;
     }
     case 'orderClosed':
-      if (e.order.kind === OrderKind.FOOTBALLER) {
+      if (e.order.kind === OrderKind.LEGEND) {
+        if (e.missed) {
+          sfx.failed();
+          toast("Al centrocampo non c'è più nessuno. Chissà chi era...", '#ff5b4b', 5);
+        } else toast(`Richiesta speciale completata: +${euro(e.pay.total)}`, LEGEND_COLOR, 4);
+      } else if (e.order.kind === OrderKind.FOOTBALLER) {
         if (e.missed) {
           sfx.failed();
           toast('Il calciatore è andato via senza pizza: niente bonus', '#ff5b4b', 4.5);
@@ -415,6 +542,7 @@ function handleEvent(e) {
       break;
     case 'gameOver':
       sfx.fired();
+      clearSave();
       queueDialog({
         title: "NAPULE NUN TE VO' CCHIÙ",
         color: '#e0412f',

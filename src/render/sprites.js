@@ -168,18 +168,29 @@ export function drawBubble(wx, wy, text, h = 0.5) {
   ctx.font = '9px "Press Start 2P",monospace';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  const w = ctx.measureText(text).width + 12;
+  // Le frasi lunghe vanno a capo.
+  const maxW = Math.min(240, screen.w * 0.6);
+  const lines = [];
+  for (const word of text.split(' ')) {
+    const last = lines.at(-1);
+    if (last !== undefined && ctx.measureText(`${last} ${word}`).width <= maxW)
+      lines[lines.length - 1] = `${last} ${word}`;
+    else lines.push(word);
+  }
+  const lineH = 13;
+  const w = Math.max(...lines.map((l) => ctx.measureText(l).width)) + 12;
+  const hgt = 7 + lines.length * lineH;
   const bx = sx - w / 2;
-  const by = sy - 36;
+  const by = sy - 16 - hgt;
   ctx.fillStyle = '#000';
-  ctx.fillRect(bx + 2, by + 2, w, 20);
+  ctx.fillRect(bx + 2, by + 2, w, hgt);
   ctx.fillStyle = '#fff';
-  ctx.fillRect(bx, by, w, 20);
+  ctx.fillRect(bx, by, w, hgt);
   ctx.beginPath();
-  ctx.moveTo(sx - 4, by + 20);
-  ctx.lineTo(sx + 3, by + 20);
-  ctx.lineTo(sx - 2, by + 27);
+  ctx.moveTo(sx - 4, by + hgt);
+  ctx.lineTo(sx + 3, by + hgt);
+  ctx.lineTo(sx - 2, by + hgt + 7);
   ctx.fill();
   ctx.fillStyle = '#111';
-  ctx.fillText(text, sx, by + 11);
+  lines.forEach((l, k) => ctx.fillText(l, sx, by + 4 + lineH / 2 + k * lineH));
 }

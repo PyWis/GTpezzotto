@@ -4,7 +4,7 @@ import { collides, Solid } from '../world/map.js';
 import { DRIVABLE, GATES, parkingLots } from '../world/roadnet.js';
 import { sfx } from '../audio.js';
 import { isOnStreet, player } from './player.js';
-import { vespas } from './vespas.js';
+import { bump, vespas } from './vespas.js';
 import { say, tickSpeech } from './speech.js';
 
 const FLEET = 70;
@@ -257,6 +257,7 @@ function pushPlayerAway(car) {
 
   const v = player.vespa;
   let shake = 0;
+  bump(v, v.v);
   if (Math.abs(v.v) > 80) {
     shake = Math.min(10, Math.abs(v.v) / 28);
     say(car, pick(COMPLAINTS), 1.8);

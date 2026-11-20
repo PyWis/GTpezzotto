@@ -11,6 +11,7 @@
   <body>
     <canvas id="c"></canvas>
     <button id="mute" title="Audio (N)">🔊</button>
+    <button id="pause" title="Pausa (P)">⏸</button>
 
     <div id="touch">
       <div class="tb" data-k="left" style="left: 14px; bottom: 24px">◀</div>
@@ -31,8 +32,8 @@
         <p class="story">
           Sei <b>Gennaro</b>, disoccupato, e vivere a Napoli costa <b>100-200 € al giorno</b>. Fai il giro delle
           <b>5 pizzerie</b> e chiedi chi cerca un fattorino. Ritira le pizze, consegnale a <b>tre famiglie</b> in
-          <b>3 minuti</b> e guadagna 10 € a consegna + il 20% + le mance. Se resti in rosso per <b>3 giorni</b> di fila
-          è finita…
+          <b>3 minuti</b> e guadagna 10 € a consegna + il 20% + le mance. Ogni urto ammacca la Vespa: si ripara solo a
+          <b>Via Gianturco</b>. Se resti in rosso per <b>3 giorni</b> di fila è finita…
         </p>
         <table>
           <tr>
@@ -71,8 +72,13 @@
             <td>N</td>
             <td>audio on/off</td>
           </tr>
+          <tr>
+            <td>P / ESC</td>
+            <td>pausa (la partita si salva da sola)</td>
+          </tr>
         </table>
         <button id="go">JAMME!</button>
+        <button id="new" class="secondary">NUOVA PARTITA</button>
         <p>
           Parti da Piazza del Plebiscito, con una Vespa parcheggiata accanto.<br />Le consegne si fanno passando piano
           davanti al portone del cliente.

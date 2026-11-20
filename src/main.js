@@ -1,11 +1,11 @@
 // NAPULE — Grand Theft Vespa. Entry point: wires input, simulation and rendering.
 
 import { time } from './core/time.js';
-import { LANDMARKS, TILE, VESUVIUS, districtAt } from './data/city.js';
-import { HORN_REPLIES } from './data/people.js';
+import { LANDMARKS, STADIUM_GATE, TILE, VESUVIUS, districtAt } from './data/city.js';
+import { HORN_REPLIES, RUMORS } from './data/people.js';
 import { audio, initAudio, setEngine, sfx, toggleMute } from './audio.js';
 import { bindInput, keys, onCommand } from './input.js';
-import { isInTunnel, placeNameAt } from './world/map.js';
+import { inStadium, isInTunnel, placeNameAt, stadiumGate } from './world/map.js';
 import { trees } from './world/trees.js';
 import {
   dismount,
@@ -14,11 +14,13 @@ import {
   mount,
   MOUNT_RANGE,
   player,
+  SHIRT_AZZURRA,
+  SHIRT_RED,
   speed,
   updateOnFoot,
   updateRiding,
 } from './entities/player.js';
-import { nearestFreeVespa, vespas } from './entities/vespas.js';
+import { nearestFreeVespa, onBump, vespas } from './entities/vespas.js';
 import * as people from './entities/pedestrians.js';
 import * as traffic from './entities/traffic.js';
 import {
@@ -36,19 +38,27 @@ import {
 import { isTalking, say } from './entities/speech.js';
 import {
   career,
+  conditionPct,
   currentObjective,
   footballerOrder,
   GARAGE,
   jobMarkers,
+  LEGEND_COLOR,
+  legendOrder,
+  mechanicLine,
   nearestPizzeria,
   nearGarage,
+  nearRepairShop,
   openGarage,
   openPizzeria,
+  openRepairShop,
   pendingStops,
   pizzasOnBoard,
   pizzeriaLook,
+  REPAIR_SHOP,
   stopColor,
 } from './game/job.js';
+import { clearSave, loadGame, readSave, saveGame } from './game/save.js';
 import { MAX_HANDOFF_SPEED } from './game/career.js';
 import { PIZZERIAS, RULES } from './data/pizza.js';
 import { canvas, ctx, resize, screen } from './render/canvas.js';
@@ -58,8 +68,8 @@ import { drawBubble, drawCar, drawFallenPerson, drawPerson, drawTree, drawVespa 
 import { drawEffects } from './render/effects.js';
 import { drawBuildings } from './render/buildings.js';
 import { drawFunicolari, drawMetroOverlay } from './render/transit.js';
-import { drawGarage, drawGuide, drawPizzeria, drawStop } from './render/delivery.js';
-import { drawHud, showBanner, tickHud } from './render/hud.js';
+import { drawGarage, drawGuide, drawPizzeria, drawStadiumGate, drawStop } from './render/delivery.js';
+import { drawHud, showBanner, tickHud, toast } from './render/hud.js';
 import {
   closeStreetMap,
   drawRadar,
@@ -72,6 +82,7 @@ import {
   zoomStreetMap,
 } from './render/citymap.js';
 import { html, isDialogOpen, showDialog } from './ui/dialog.js';
+import { euro } from './core/format.js';
 
 const isTouch = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
 const game = { started: false, hintTime: 7, district: '' };
@@ -107,6 +118,8 @@ function availableAction() {
     if (shop) return { label: `E · ${shop.name.toUpperCase()}`, run: () => openPizzeria(shop) };
     if (speed() < 40 && nearGarage(player.x, player.y))
       return { label: `E · ${GARAGE.name.toUpperCase()}`, run: () => openGarage(player.vespa) };
+    if (speed() < 40 && nearRepairShop(player.x, player.y))
+      return { label: `E · ${REPAIR_SHOP.name.toUpperCase()}`, run: () => openRepairShop(player.vespa) };
     if (speed() < 5 && game.hintTime <= 0) return { label: 'E · SCENDI', run: getOff };
     return { label: null, run: getOff };
   }
@@ -115,6 +128,8 @@ function availableAction() {
   const shop = nearestPizzeria(player.x, player.y);
   if (shop) return { label: `E · ${shop.name.toUpperCase()}`, run: () => openPizzeria(shop) };
   if (nearGarage(player.x, player.y)) return { label: `E · ${GARAGE.name.toUpperCase()}`, run: () => openGarage(null) };
+  if (nearRepairShop(player.x, player.y))
+    return { label: `E · ${REPAIR_SHOP.name.toUpperCase()}`, run: () => openRepairShop(null) };
   const vespa = nearestFreeVespa(player.x, player.y, MOUNT_RANGE);
   if (vespa)
     return {
@@ -159,10 +174,50 @@ const playing = () => game.started && !isDialogOpen();
 onCommand('action', () => playing() && !streetMap.open && availableAction()?.run());
 onCommand('horn', () => playing() && honk());
 onCommand('map', () => playing() && (streetMap.open ? closeStreetMap() : openStreetMap(player)));
-onCommand('back', () => streetMap.open && closeStreetMap());
+onCommand('back', () => (streetMap.open ? closeStreetMap() : playing() && pause()));
+onCommand('pause', () => playing() && (streetMap.open ? closeStreetMap() : pause()));
 onCommand('zoomIn', () => streetMap.open && zoomStreetMap(screen.w / 2, screen.h / 2, 1.4));
 onCommand('zoomOut', () => streetMap.open && zoomStreetMap(screen.w / 2, screen.h / 2, 1 / 1.4));
 onCommand('mute', () => setMuted(toggleMute()));
+
+// ---------------------------------------------------------------------------
+// Pause & save
+// ---------------------------------------------------------------------------
+/** The game stops while any dialog is open: the pause menu is just a dialog. */
+function pause() {
+  setEngine(null);
+  const saved = save();
+  showDialog({
+    title: 'PAUSA',
+    color: '#cfc6b0',
+    body: html`<p>Giorno ${career.day} · ${euro(career.wallet)} nel portafoglio.</p>
+      <p class="small">${saved ? 'Partita salvata.' : 'Salvataggio non disponibile in questo momento.'}</p>`,
+    buttons: [
+      { label: 'Riprendi', cancel: true },
+      {
+        label: 'Nuova partita',
+        run: () =>
+          showDialog({
+            title: 'NUOVA PARTITA?',
+            color: '#e0412f',
+            body: html`<p>La partita salvata verrà cancellata.</p>`,
+            buttons: [
+              { label: 'Sì, ricomincia', run: newGame },
+              { label: 'No', cancel: true, run: pause },
+            ],
+          }),
+      },
+    ],
+  });
+}
+
+const save = () => game.started && saveGame(career);
+
+function newGame() {
+  game.resetting = true; // niente salvataggio mentre si ricarica
+  clearSave();
+  location.reload();
+}
 
 function setMuted(muted) {
   document.getElementById('mute').textContent = muted ? '🔇' : '🔊';
@@ -253,12 +308,16 @@ function update(dt) {
       updateOnFoot(dt);
       break;
     case 'vespa':
-      shake = updateRiding(dt, career.isTuned(player.vespa) ? RULES.tuning.speed : 1);
+      shake = updateRiding(dt, (career.isTuned(player.vespa) ? RULES.tuning.speed : 1) * (player.vespa.condition ?? 1));
       break;
   }
   if (player.sayT > 0) player.sayT -= dt;
   shake = Math.max(shake, people.updatePedestrians(dt), traffic.updateTraffic(dt));
   updateFootballer(dt);
+  updateMechanics(dt);
+  updateLegend(dt);
+  updateRumors(dt);
+  player.shirt = career.blessed ? SHIRT_AZZURRA : SHIRT_RED;
   if (shake) addShake(shake);
 
   const district = districtAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
@@ -323,7 +382,9 @@ function modeLabel() {
   if (player.mode === 'vespa') {
     const cargo = pizzasOnBoard();
     const turbo = career.isTuned(player.vespa) ? ' TURBO' : '';
-    return [`VESPA${turbo}  ${kmh(player.vespa.v)} KM/H${cargo ? `  · 🍕 ${cargo}` : ''}`, '#ffd23f'];
+    const pct = conditionPct(player.vespa);
+    const dents = pct < 100 ? `  · 🔧 ${pct}%` : '';
+    return [`VESPA${turbo}  ${kmh(player.vespa.v)} KM/H${cargo ? `  · 🍕 ${cargo}` : ''}${dents}`, '#ffd23f'];
   }
   const cargo = pizzasOnBoard();
   return [`A PIEDI${cargo ? `  · 🍕 ${cargo}` : ''}`, '#cfc6b0'];
@@ -343,6 +404,8 @@ function promptText() {
 
 function hintText() {
   if (!game.started) return null;
+  if (legendOrder()?.pickedUp && !inStadium(player.x, player.y))
+    return "Entra nello Stadio da Piazzale Tecchio: t'aspettano a centrocampo";
   if (career.status === 'unemployed' && game.hintTime <= 0)
     return 'Segui la freccia: chiedi lavoro alle pizzerie, chissà chi assume';
   if (career.status === 'unemployed' && game.hintTime > 0 && player.mode === 'foot')
@@ -387,6 +450,100 @@ function drawFootballer() {
   ctx.stroke();
 }
 
+// The two mechanics, standing at their shop doors. Each has something to say about the other.
+const mechanics = [
+  { shop: GARAGE, kind: 'tuning', shirt: '#2b5f9e', trousers: '#2b5f9e', hair: '#3a2a1a', skin: '#d9a77f' },
+  { shop: REPAIR_SHOP, kind: 'repair', shirt: '#3c7a3c', trousers: '#3c7a3c', hair: '#b9b4ab', skin: '#e0b48e' },
+].map((m) => ({ ...m, x: m.shop.pos[0] - 26, y: m.shop.pos[1] + 4, say: '', sayT: 0, greeted: false }));
+
+function updateMechanics(dt) {
+  for (const m of mechanics) {
+    if (m.sayT > 0) m.sayT -= dt;
+    const d = Math.hypot(player.x - m.x, player.y - m.y);
+    if (d < 160 && !m.greeted) {
+      m.greeted = true;
+      say(m, mechanicLine(m.kind), 5);
+    } else if (d > 420) m.greeted = false;
+  }
+}
+
+function drawMechanics() {
+  for (const m of mechanics) {
+    if (!isVisible(m.x, m.y)) continue;
+    drawPerson(...toScreen(m.x, m.y), Math.atan2(player.y - m.y, player.x - m.x), m, 0, false);
+  }
+}
+
+// The secret mission: the Dio del Calcio waits at the centre of the pitch, then vanishes.
+const legend = { shirt: '#1d9be0', trousers: '#ffffff', hair: '#0d0806', skin: '#b98b62', say: '', sayT: 0, vanish: 0 };
+const LEGEND_WAIT = ['Ccà, guagliò! A centrocampo!', "'O pallone nun se ferma maje.", "Tengo na famma 'e campione!"];
+const VANISH_TIME = 3.5;
+
+function updateLegend(dt) {
+  const order = legendOrder();
+  if (legend.sayT > 0) legend.sayT -= dt;
+  if (order) {
+    const { address } = order.stops[0];
+    Object.assign(legend, { x: address.x + 14, y: address.y - 4, order });
+    if (legend.sayT <= 0 && Math.hypot(player.x - legend.x, player.y - legend.y) < 320 && Math.random() < dt * 0.5)
+      say(legend, LEGEND_WAIT[Math.floor(Math.random() * LEGEND_WAIT.length)], 2.4);
+  } else if (legend.order) {
+    if (legend.order.state === 'done') {
+      say(legend, "Grazie, guagliò. Io so' 'o Dio d''o Calcio.", VANISH_TIME);
+      legend.vanish = VANISH_TIME;
+    }
+    legend.order = null;
+  }
+  if (legend.vanish > 0) legend.vanish -= dt;
+  // The gate stays open for the mission, and until nobody (and no Vespa) is left inside.
+  stadiumGate.open =
+    !!order ||
+    legend.vanish > 0 ||
+    inStadium(player.x, player.y) ||
+    vespas.some((v) => !v.ridden && inStadium(v.x, v.y));
+}
+
+// From day 8 until the mission, people in the street talk about the Dio del Calcio coming back.
+const rumor = { wait: 8 };
+function updateRumors(dt) {
+  const { rumorsFrom, day } = RULES.legend;
+  if (career.legendFired || career.day < rumorsFrom || career.day > day || career.status === 'broke') return;
+  rumor.wait -= dt;
+  if (rumor.wait > 0) return;
+  rumor.wait = 12 + Math.random() * 18; // una voce ogni 12-30 secondi
+  const near = people.pedestrians.filter(
+    (p) => p.down <= 0 && !isTalking(p) && Math.hypot(p.x - player.x, p.y - player.y) < 260 && isVisible(p.x, p.y),
+  );
+  if (near.length)
+    say(near[Math.floor(Math.random() * near.length)], RUMORS[Math.floor(Math.random() * RUMORS.length)], 3.5);
+  else rumor.wait = 2; // nessuno vicino: riprova fra poco
+}
+
+const legendVisible = () => !!legend.order || legend.vanish > 0;
+
+function drawLegend() {
+  if (!legendVisible() || !isVisible(legend.x, legend.y)) return;
+  const [sx, sy] = toScreen(legend.x, legend.y);
+  const z = camera.zoom;
+  const fade = legend.order ? 1 : Math.min(1, legend.vanish / 1.5);
+  // A golden halo, and sparkles while he disappears.
+  ctx.globalAlpha = fade * (0.35 + 0.15 * Math.sin(time.t * 4));
+  ctx.fillStyle = LEGEND_COLOR;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 16 * z, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = fade;
+  drawPerson(sx, sy, Math.atan2(player.y - legend.y, player.x - legend.x), legend, 0, false);
+  ctx.globalAlpha = 1;
+  if (!legend.order)
+    for (let k = 0; k < 10; k++) {
+      const an = k * 0.63 + time.t * 2;
+      const r = (1 - fade) * 30 * z + 8 * z;
+      ctx.fillStyle = k % 2 ? '#fff' : LEGEND_COLOR;
+      ctx.fillRect(sx + Math.cos(an) * r - 1.5, sy + Math.sin(an) * r - 1.5, 3, 3);
+    }
+}
+
 function drawWorld() {
   const view = visibleTiles();
   drawGround(view);
@@ -399,6 +556,8 @@ function drawWorld() {
   for (const c of traffic.parkedCars) if (isVisible(c.x, c.y)) drawCar(c);
   for (const c of traffic.cars) if (isVisible(c.x, c.y)) drawCar(c);
   drawFootballer();
+  drawMechanics();
+  drawLegend();
   if (player.mode === 'foot') drawPerson(...toScreen(player.x, player.y), player.a, player, player.walk, player.moving);
   else if (player.mode === 'vespa') drawVespa(player.vespa, player, pizzasOnBoard());
 
@@ -411,13 +570,16 @@ function drawWorld() {
   // Shop signs stay readable above the roofs of the vicoli.
   for (const p of PIZZERIAS)
     drawPizzeria(p, pizzeriaLook(p), Math.hypot(p.pos[0] - player.x, p.pos[1] - player.y) < 200);
-  drawGarage(GARAGE, Math.hypot(GARAGE.pos[0] - player.x, GARAGE.pos[1] - player.y) < 200);
+  for (const g of [GARAGE, REPAIR_SHOP]) drawGarage(g, Math.hypot(g.pos[0] - player.x, g.pos[1] - player.y) < 200);
+  drawStadiumGate(STADIUM_GATE.rect, stadiumGate.open);
   const next = currentObjective(player);
   for (const { order, stop } of pendingStops())
     drawStop(stop, order, next && next.x === stop.address.x && next.y === stop.address.y, stopColor(order));
   for (const p of people.pedestrians) if (isTalking(p) && isVisible(p.x, p.y)) drawBubble(p.x, p.y, p.say);
   for (const c of traffic.cars) if (isTalking(c) && isVisible(c.x, c.y)) drawBubble(c.x, c.y, c.say);
   if (footballerOrder() && isTalking(footballer)) drawBubble(footballer.x, footballer.y, footballer.say);
+  for (const m of mechanics) if (isTalking(m) && isVisible(m.x, m.y)) drawBubble(m.x, m.y, m.say);
+  if (legendVisible() && isTalking(legend)) drawBubble(legend.x, legend.y, legend.say);
   if (isTalking(player)) drawBubble(player.x, player.y, player.say);
   if (game.started && isOnStreet()) drawGuide(player, next);
 }
@@ -459,9 +621,36 @@ function start() {
   initAudio();
   game.started = true;
   document.getElementById('start').style.display = 'none';
-  showBanner('Piazza del Plebiscito');
   game.district = districtAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
+  if (game.loaded) {
+    game.hintTime = 0;
+    showBanner(`Giorno ${career.day} · ${game.district}`);
+  } else showBanner('Piazza del Plebiscito');
 }
+
+// A saved game is put back before the city fills up, so traffic and people appear around Gennaro.
+const saved = readSave();
+if (saved) {
+  game.loaded = loadGame(career, saved);
+  if (!game.loaded) location.reload();
+}
+
+// Autosave: every 15 seconds, when the tab is hidden (and then pause) and when the page closes.
+setInterval(() => !game.resetting && !isDialogOpen() && save(), 15_000);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'hidden' || game.resetting) return;
+  save();
+  if (playing() && !streetMap.open) pause();
+});
+addEventListener('pagehide', () => !game.resetting && save());
+
+// Dents: tell Gennaro every 5% of speed lost.
+onBump((v, before) => {
+  if (v !== player.vespa) return;
+  const step = (c) => Math.floor(Math.round(c * 1000) / 50);
+  if (step(v.condition) < step(before))
+    toast(`Vespa ammaccata: va al ${conditionPct(v)}%. Si ripara solo a Via Gianturco`, '#ff9f40', 4);
+});
 
 addEventListener('resize', resize);
 resize();
@@ -475,6 +664,13 @@ document.getElementById('mute').onclick = () => {
   setMuted(toggleMute());
 };
 document.getElementById('go').onclick = start;
+document.getElementById('pause').onclick = () => playing() && pause();
+if (game.loaded) {
+  document.getElementById('go').textContent = `CONTINUA · GIORNO ${career.day}`;
+  const fresh = document.getElementById('new');
+  fresh.style.display = 'inline-block';
+  fresh.onclick = newGame;
+}
 camera.x = player.x;
 camera.y = player.y;
 

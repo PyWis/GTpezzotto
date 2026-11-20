@@ -13,7 +13,7 @@ function seeded(seed) {
   };
 }
 
-function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [] } = {}) {
+function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [], blessed = false } = {}) {
   const pizzerias = PIZZERIAS.map((p, i) => ({ ...p, pos: [i * 1000, 0] }));
   let n = 0;
   const findAddress = (r, avoid, options) => {
@@ -27,12 +27,15 @@ function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [] } = {}) {
     surnames: SURNAMES,
     rules: { ...RULES, ...rules },
     findAddress,
+    stadium: STADIUM,
+    blessed,
     rng,
     onEvent: (e) => events.push(e),
   });
   return { career, events };
 }
 
+const STADIUM = { x: 77777, y: 4444, label: 'Stadio, centrocampo' };
 const far = { x: -1e6, y: -1e6, speed: 0 };
 const at = ([x, y]) => ({ x, y, speed: 0 });
 const types = (events) => events.map((e) => e.type);
@@ -234,7 +237,7 @@ test('i 10€ fissi si pagano solo se qualcosa è stato consegnato', () => {
   assert.equal(order.pay.base, 10);
 });
 
-test('pizze non consegnate: 1% a pizza di essere licenziato', () => {
+test('pizze non consegnate: 5% a pizza di essere licenziato', () => {
   let fired = 0;
   for (let seed = 1; seed <= 400; seed++) {
     const { career, events } = makeCareer({ rng: seeded(seed) });
@@ -246,8 +249,9 @@ test('pizze non consegnate: 1% a pizza di essere licenziato', () => {
     assert.ok(types(events).includes('fired'));
     assert.equal(career.standingWith(shop.id), 'banned');
   }
-  // P(licenziato) con 3-7 pizze perse ≈ 3-7%.
-  assert.ok(fired > 3 && fired < 50, `licenziato ${fired} volte su 400`);
+  // P(licenziato) con 3-7 pizze perse ≈ 14-30%.
+  assert.equal(RULES.firingChancePerPizza, 0.05);
+  assert.ok(fired > 50 && fired < 130, `licenziato ${fired} volte su 400`);
 });
 
 test('ogni giorno Gennaro spende 100-200€ per vivere', () => {
@@ -315,7 +319,7 @@ test('consegna extra: una famiglia, 5 pizze, ad almeno metà mappa; non fa licen
   assert.equal(career.employer, shop.id, 'il datore di lavoro non ne sa niente');
 });
 
-test('consegna extra pagata come una normale, anche da disoccupato', () => {
+test('consegna extra pagata il doppio di una normale, anche da disoccupato', () => {
   const { career } = makeCareer();
   const order = career.takeSideJob(PIZZERIAS[2].id);
   const [stop] = order.stops;
@@ -323,7 +327,7 @@ test('consegna extra pagata come una normale, anche da disoccupato', () => {
   career.update(1, at([stop.address.x, stop.address.y]));
   assert.equal(order.state, 'done');
   assert.ok(stop.tip > 0);
-  assert.ok(Math.abs(order.pay.total - (10 + orderValue(stop) * 0.2 + stop.tip)) < 0.02);
+  assert.ok(Math.abs(order.pay.total - 2 * (10 + orderValue(stop) * 0.2 + stop.tip)) < 0.02);
   assert.equal(career.status, 'unemployed');
 });
 
@@ -385,7 +389,7 @@ test('calciatore senza pizza: niente bonus', () => {
   assert.equal(career.ledger.orders[0].state, 'failed');
 });
 
-test('di norma il calciatore chiama una volta ogni 50 ordini', () => {
+test('di norma il calciatore chiama nel 4% degli ordini', () => {
   let footballers = 0;
   let total = 0;
   for (let seed = 1; seed <= 20; seed++) {
@@ -400,7 +404,8 @@ test('di norma il calciatore chiama una volta ogni 50 ordini', () => {
     footballers += created.filter((e) => e.order.kind === 'footballer').length;
   }
   const rate = footballers / total;
-  assert.ok(rate > 0.003 && rate < 0.06, `${footballers} calciatori su ${total} ordini`);
+  assert.equal(RULES.footballer.chance, 0.04);
+  assert.ok(rate > 0.015 && rate < 0.08, `${footballers} calciatori su ${total} ordini`);
 });
 
 // ------------------------------------------------------------------ officina
@@ -416,4 +421,132 @@ test("l'officina di Fuorigrotta modifica la Vespa per 1000€", () => {
   assert.ok(career.isTuned(vespa));
   assert.equal(career.tune(vespa), false, 'già modificata');
   assert.equal(RULES.tuning.speed, 1.2);
+});
+
+// ------------------------------------------------------------------ officina di Via Gianturco
+
+test('la riparazione a Via Gianturco costa 3€ per ogni punto perso e riporta la Vespa al 100%', () => {
+  const { career, events } = makeCareer();
+  const vespa = { condition: 0.9 };
+  assert.equal(career.repairCost(vespa), 30);
+  assert.equal(career.repairCost({ condition: 1 }), 0);
+  assert.equal(career.repairCost({}), 0, 'una Vespa mai urtata è nuova');
+  career.wallet = 29;
+  assert.equal(career.repair(vespa), false, 'non bastano i soldi');
+  career.wallet = 100;
+  assert.equal(career.repair(vespa), true);
+  assert.equal(vespa.condition, 1);
+  assert.equal(career.wallet, 70);
+  assert.equal(career.repair(vespa), false, 'niente da riparare');
+  assert.equal(ofType(events, 'repaired').length, 1);
+});
+
+// ------------------------------------------------------------------ missione segreta
+
+const DAY10 = (RULES.legend.day - 1) * RULES.dayLength;
+
+test('missione segreta: giorno 10, dopo 10 minuti, una pizza per il Dio del Calcio allo stadio', () => {
+  const { career } = makeCareer({ rules: { livingCost: [0, 0], maxDaysInRed: 99 } });
+  career.update(DAY10 + RULES.legend.after - 1, far);
+  assert.equal(career.activeOrders.length, 0, 'non prima dei 10 minuti');
+  career.update(2, far);
+  const [order] = career.activeOrders;
+  assert.equal(order.kind, 'legend');
+  assert.equal(order.pizzaCount, 1);
+  assert.equal(order.stops[0].family, RULES.legend.name);
+  assert.equal(order.stops[0].address, STADIUM);
+  assert.equal(order.pizzeria.id, RULES.legend.pizzeria, 'da disoccupato si ritira vicino allo stadio');
+
+  career.update(1, at(order.pizzeria.pos));
+  assert.ok(order.pickedUp);
+  career.update(1, at([STADIUM.x, STADIUM.y]));
+  assert.equal(order.state, 'done');
+  assert.equal(order.stops[0].tip, 115, 'mancia extra di 115€');
+  assert.ok(Math.abs(order.pay.total - (10 + orderValue(order.stops[0]) * 0.2 + 115)) < 0.02);
+
+  wait(career, RULES.dayLength, far);
+  assert.equal(career.orders.filter((o) => o.kind === 'legend').length, 0, 'una volta sola');
+});
+
+test('missione segreta: da assunto arriva dal proprio datore di lavoro, e perderla non fa licenziare', () => {
+  const { career } = makeCareer({ rules: { livingCost: [0, 0], maxDaysInRed: 99, firingChancePerPizza: 1 } });
+  career.time = DAY10 + RULES.legend.after - 1;
+  career.ledger.day = RULES.legend.day;
+  career.rollOpenings();
+  const shop = hire(career);
+  career.job.nextOrderAt = Infinity;
+  career.update(2, far);
+  const order = career.activeOrders.find((o) => o.kind === 'legend');
+  assert.equal(order.pizzeria, shop);
+  career.update(RULES.legend.time + 1, far);
+  assert.equal(order.state, 'failed');
+  assert.equal(career.employer, shop.id);
+});
+
+test('missione segreta: niente negli altri giorni', () => {
+  const { career } = makeCareer({ rules: { livingCost: [0, 0], maxDaysInRed: 99 } });
+  wait(career, DAY10 - 1, far);
+  assert.equal(career.legendFired, false);
+  career.time = RULES.legend.day * RULES.dayLength + RULES.legend.after; // giorno 11
+  career.ledger.day = RULES.legend.day + 1;
+  career.update(1, far);
+  assert.equal(career.legendFired, false);
+});
+
+// ------------------------------------------------------------------ salvataggio
+
+test('salvataggio: la carriera si ricostruisce identica, ordini in corso compresi', () => {
+  const { career } = makeCareer({ rng: seeded(3) });
+  const shop = hire(career);
+  career.update(0.1, at(shop.pos)); // primo ordine, ritirato
+  career.wallet = 1234.5;
+  career.bannedUntil.set('ferrovia', 12);
+  const vespas = [{}, {}, {}];
+  career.tunedVespas.add(vespas[1]);
+  const json = JSON.parse(JSON.stringify(career.serialize(vespas)));
+
+  const { career: copy } = makeCareer({ rng: seeded(4) });
+  copy.restore(json, vespas);
+  assert.equal(copy.status, 'employed');
+  assert.equal(copy.employer, shop.id);
+  assert.equal(copy.job.pizzeria, copy.pizzeria(shop.id));
+  assert.equal(copy.wallet, 1234.5);
+  assert.equal(copy.time, career.time);
+  assert.ok(copy.isBanned('ferrovia'));
+  assert.ok(copy.isTuned(vespas[1]) && !copy.isTuned(vespas[0]));
+  const [order] = copy.activeOrders;
+  assert.ok(order.pickedUp);
+  assert.equal(order.pizzeria, copy.pizzeria(shop.id));
+
+  // E si continua a giocare: le consegne funzionano.
+  for (const stop of order.stops) copy.update(1, at([stop.address.x, stop.address.y]));
+  assert.equal(order.state, 'done');
+  assert.equal(copy.ledger.orders.at(-1), order);
+});
+
+// ------------------------------------------------------------------ maglia azzurra
+
+test('servire il Dio del Calcio fa diventare Gennaro "benedetto"', () => {
+  const { career, events } = makeCareer({ rules: { livingCost: [0, 0], maxDaysInRed: 99 } });
+  assert.equal(career.blessed, false);
+  career.update(DAY10 + RULES.legend.after + 1, far);
+  const order = career.activeOrders.find((o) => o.kind === 'legend');
+  career.update(1, at(order.pizzeria.pos));
+  career.update(1, at([STADIUM.x, STADIUM.y]));
+  assert.equal(career.blessed, true);
+  assert.equal(ofType(events, 'blessed').length, 1);
+});
+
+test('da benedetto ogni calciatore dà 10€ in più (oltre al bonus), e vale anche in una partita nuova', () => {
+  for (const blessed of [false, true]) {
+    const rules = { ...RULES, footballer: { ...RULES.footballer, chance: 1 } };
+    const { career } = makeCareer({ rules, blessed });
+    const shop = hire(career);
+    career.update(0.1, at(shop.pos));
+    const [order] = career.activeOrders;
+    career.update(1, at([order.stops[0].address.x, order.stops[0].address.y]));
+    assert.equal(order.state, 'done');
+    assert.equal(order.pay.total, blessed ? 10 : 0);
+    assert.equal(career.payMultiplier, 1.2, 'il bonus normale resta');
+  }
 });

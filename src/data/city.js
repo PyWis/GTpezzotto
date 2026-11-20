@@ -69,6 +69,7 @@ export const ROADS = [
   road('Via Taddeo da Sessa', 'main', 3, [[254, 18], [298, 18]]),
   road('Corso Malta', 'main', 3, [[298, 18], [298, 80]]),
   road('Via Giovanni Porzio', 'main', 3, [[264, 18], [264, 66]]),
+  road('Via Poggioreale', 'main', 3, [[264, 18], [264, -30]]),
   road('Via Galileo Ferraris', 'main', 3, [[245, 66], [298, 66]]),
   road('Via Coroglio', 'main', 3, [[-30, 86], [4, 86], [26, 89], [44, 92]]),
   road('Via Diocleziano', 'main', 3, [[24, 34], [24, 88]]),
@@ -173,6 +174,7 @@ export const LANDMARKS = [
   { name: 'Teatro Mediterraneo', rect: [65, 74, 70, 78], height: 2.2, color: '#e6dfcf', style: 'palace' },
   { name: "Palazzo dell'Arte", rect: [54, 76, 59, 80], height: 2, color: '#d9cbb0', style: 'palace' },
   { name: "Cubo d'Oro", rect: [55, 86, 58, 89], height: 2, color: '#d4a73a', style: 'palace' },
+  { name: 'Carcere di Poggioreale', rect: [268, 3, 287, 15], height: 2.6, color: '#8f8a80', style: 'prison' },
   { name: 'Statua di Carlo III', rect: [175, 66, 176, 67], height: 1.4, color: '#d6cfbf', style: 'statue' },
   { name: 'Statua di Ferdinando I', rect: [175, 73, 176, 74], height: 1.4, color: '#d6cfbf', style: 'statue' },
 ];
@@ -221,6 +223,11 @@ export const NISIDA = { center: [20, 107], radius: 4 }; // l'isolotto a est del 
 /** Le spiagge: sabbia fra la strada e il mare. */
 export const BEACHES = [{ name: 'Spiaggia di Bagnoli', rect: [2, 88, 44, 101] }];
 export const BROWNFIELDS = [[2, 60, 22, 84]];
+/**
+ * L'ingresso nord dello Stadio Maradona, verso Piazzale Tecchio: un varco nelle tribune che si apre
+ * solo per la missione segreta. Rettangolo in coordinate-tile [x0, y0, x1, y1).
+ */
+export const STADIUM_GATE = { rect: [77, 71, 80, 74], pitch: [78, 80] };
 export const RAILYARD = { rect: [300, 44, 352, 52], trackY: 48 };
 
 /** Quartieri, valutati in ordine: vince la prima regola che corrisponde. */
@@ -229,6 +236,7 @@ const DISTRICT_RULES = [
   ['Bagnoli', (x) => x < 40],
   ['Bagnoli', (x, y) => x < HILL.x0 && y >= 95], // Coroglio e Nisida
   ['San Giovanni a Teduccio', (x) => x >= 298],
+  ['Poggioreale', (x, y) => x >= 255 && y < 18],
   ['Fuorigrotta', (x) => x < HILL.x0],
   ['Posillipo', (x, y) => x < HILL.x1 && y >= HILL.y0],
   ['Vomero', (x) => x < HILL.x1],
@@ -267,6 +275,7 @@ export const DISTRICT_COLORS = {
   Porto: '#dedcd4',
   'Piazza Garibaldi': '#e8d8e6',
   'Centro Direzionale': '#d4dde6',
+  Poggioreale: '#d9d4cc',
   'San Giovanni a Teduccio': '#ddd4c8',
   Vesuvio: '#cbbfa8',
   Napoli: '#eeeeee',
@@ -304,6 +313,7 @@ const DISTRICT_ZONE = {
   'Borgo Marinari': 'chiaia',
   'San Ferdinando': 'sanFerdinando',
   'Piazza Garibaldi': 'garibaldi',
+  Poggioreale: 'garibaldi',
   Porto: 'port',
 };
 

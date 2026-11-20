@@ -3,11 +3,15 @@ import { collides, isOnHighway, moveCircle, Solid, tileAtPoint } from '../world/
 import { Tile } from '../world/tiles.js';
 import { keys, steering } from '../input.js';
 import { say } from './speech.js';
+import { bump } from './vespas.js';
 
 export const VESPA_TOP_SPEED = 330; // px/s
 export const MOUNT_RANGE = 42;
 const WALK_SPEED = 78;
 const RUN_SPEED = 140;
+
+export const SHIRT_RED = '#c8262b';
+export const SHIRT_AZZURRA = '#1d9be0';
 
 /** Gennaro. `mode` is one of: foot, vespa, funicular, metro. */
 export const player = {
@@ -19,7 +23,7 @@ export const player = {
   vespa: null,
   walk: 0,
   moving: false,
-  shirt: '#6cb4ee',
+  shirt: SHIRT_RED, // diventa azzurra dopo aver servito il Dio del Calcio
   hair: '#1d140e',
   skin: '#e8b994',
   say: '',
@@ -65,9 +69,13 @@ export function updateOnFoot(dt) {
   if (hit.highway && player.sayT <= 0) say(player, 'Vietato ai pedoni!');
 }
 
-/** Arcade Vespa physics. Returns the impact strength (for screen shake), or 0. */
+/**
+ * Arcade Vespa physics. `boost` scales speed and acceleration (turbo × how dented the Vespa is).
+ * Returns the impact strength (for screen shake), or 0.
+ */
 export function updateRiding(dt, boost = 1) {
   const v = player.vespa;
+  const before = v.v;
   const topSpeed = (tileAtPoint(v.x, v.y) === Tile.PARK ? 160 : VESPA_TOP_SPEED) * boost;
 
   if (keys.up) v.v += (v.v < 0 ? 520 : 250 * boost) * dt;
@@ -81,6 +89,9 @@ export function updateRiding(dt, boost = 1) {
   v.a += steering() * (keys.brake ? 3.6 : 2.8) * grip * dt;
 
   const hit = moveCircle(v, Math.cos(v.a) * v.v * dt, Math.sin(v.a) * v.v * dt, 9, Solid.VESPA);
+  const touching = hit.hitX || hit.hitY;
+  if (touching && !v.touching) bump(v, before); // un urto nuovo, non lo strisciare lungo il muro
+  v.touching = touching;
   let impact = 0;
   if (hit.hitX && hit.hitY) {
     if (Math.abs(v.v) > 90) impact = Math.min(10, Math.abs(v.v) / 30);

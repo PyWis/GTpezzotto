@@ -130,7 +130,15 @@ canvas {
   color: #000;
 }
 
-#mute {
+#start button.secondary {
+  display: none;
+  margin-left: 10px;
+  background: transparent;
+  color: var(--gold);
+  border: 2px solid var(--gold);
+}
+#mute,
+#pause {
   position: fixed;
   left: 12px;
   top: 12px;
@@ -245,4 +253,8 @@ canvas {
 }
 .dlg-body .warn {
   color: #ff7b6b;
+}
+
+#pause {
+  left: 56px;
 }

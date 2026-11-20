@@ -229,6 +229,49 @@ const DECORATORS = {
     fillBox(at(x0 + 0.3, y0 + 0.3, h + 0.15), at(x0 + 1.6, y1 - 0.3, h + 0.15));
   },
 
+  /** Carcere di Poggioreale: muro di cinta, bracci delle celle e torrette di guardia. */
+  prison(lm) {
+    const [x0, y0, x1, y1] = lm.rect;
+    const h = lm.height;
+    // Il cortile fra il muro e i bracci.
+    ctx.fillStyle = shade(lm.color, -0.12);
+    fillBox(at(x0 + 0.6, y0 + 0.6, h), at(x1 - 0.6, y1 - 0.6, h));
+    // Bracci delle celle: blocchi lunghi con le finestrelle a grata.
+    const arms = 4;
+    const step = (x1 - x0 - 2) / arms;
+    for (let k = 0; k < arms; k++) {
+      const ax = x0 + 1.2 + k * step;
+      const a = at(ax, y0 + 1.4, h + 0.9);
+      const b = at(ax + step * 0.6, y1 - 1.4, h + 0.9);
+      ctx.fillStyle = shade(lm.color, 0.08);
+      fillBox(a, b);
+      ctx.fillStyle = shade(lm.color, -0.45);
+      for (let ty = y0 + 1.8; ty < y1 - 1.6; ty += 0.8) {
+        const w = at(ax + step * 0.15, ty, h + 0.9);
+        const e = at(ax + step * 0.45, ty + 0.25, h + 0.9);
+        fillBox(w, e);
+      }
+    }
+    // Torrette agli angoli.
+    for (const [tx, ty] of [
+      [x0 + 0.4, y0 + 0.4],
+      [x1 - 0.4, y0 + 0.4],
+      [x0 + 0.4, y1 - 0.4],
+      [x1 - 0.4, y1 - 0.4],
+    ]) {
+      const base = at(tx, ty, h);
+      const top = at(tx, ty, h + 1.6);
+      ctx.strokeStyle = shade(lm.color, -0.4);
+      ctx.lineWidth = 3 * camera.zoom;
+      line(base[0], base[1], top[0], top[1]);
+      ctx.fillStyle = shade(lm.color, -0.3);
+      const r = radius(0.7, top);
+      ctx.fillRect(top[0] - r, top[1] - r, 2 * r, 2 * r);
+      ctx.fillStyle = '#fff2a8';
+      disc(top[0], top[1], radius(0.22, top));
+    }
+  },
+
   stadium(lm) {
     const [cx, cy] = lm.center;
     const h = lm.height;
