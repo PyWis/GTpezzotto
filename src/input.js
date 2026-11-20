@@ -23,6 +23,7 @@ const COMMANDS = {
   h: 'horn',
   m: 'map',
   n: 'mute',
+  p: 'pause',
   '+': 'zoomIn',
   '=': 'zoomIn',
   '-': 'zoomOut',

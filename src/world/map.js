@@ -18,6 +18,7 @@ import {
   QUAYS,
   RAILYARD,
   ROAD_PRIORITY,
+  STADIUM_GATE,
   ROADS,
   TILE,
   VESUVIUS,
@@ -44,6 +45,7 @@ export const grid = {
   tunnel: new Uint8Array(N),
   highway: new Uint8Array(N),
   curb: new Uint8Array(N), // bitmask N/E/S/W of curbs toward a road
+  gate: new Uint8Array(N), // the stadium gate: solid unless `stadiumGate.open`
   noise: new Float32Array(N),
 };
 
@@ -245,6 +247,14 @@ function buildMap() {
       },
     );
   }
+
+  // The north gate of the stadium: a passage through the stands, closed by a gate.
+  fillRect(STADIUM_GATE.rect, (i) => {
+    tile[i] = Tile.TRACK;
+    grid.landmark[i] = -1;
+    grid.plaza[i] = -1;
+    grid.gate[i] = 1;
+  });
 
   buildMostraDOltremare();
 
@@ -495,6 +505,16 @@ export const Solid = {
 for (const t of [Tile.BUILDING, Tile.LANDMARK, Tile.SEA, Tile.MOUNTAIN]) Solid.FOOT[t] = Solid.VESPA[t] = 1;
 Solid.VESPA[Tile.ROCK] = 1;
 
+/** The stadium gate opens only for the secret mission. */
+export const stadiumGate = { open: false };
+
+const STADIUM = LANDMARKS.find((l) => l.ring);
+/** Is a world point inside the stadium (stands, track or pitch)? */
+export function inStadium(px, py) {
+  const [cx, cy] = STADIUM.center;
+  return Math.hypot((px / TILE - cx) / STADIUM.rx, (py / TILE - cy) / STADIUM.ry) < 1.05;
+}
+
 /** Does a circle of radius r at (px, py) hit anything solid? Pedestrians may not walk the highway. */
 export function collides(px, py, r, solid) {
   const probe = (qx, qy) => {
@@ -502,6 +522,7 @@ export function collides(px, py, r, solid) {
     if (!inBounds(x, y)) return 'wall';
     const i = index(x, y);
     if (solid[grid.tile[i]]) return 'wall';
+    if (grid.gate[i] && !stadiumGate.open) return 'wall';
     if (solid === Solid.FOOT && grid.highway[i]) return 'highway';
     return null;
   };

@@ -40,7 +40,7 @@ export function drawPizzeria(p, status, near) {
   if (status.tag) outlinedText(status.tag, x, y + 20 * z, screen.small ? 7 : 8, status.color, 'center');
 }
 
-/** The mechanic's shop in Fuorigrotta: roller shutter, spanner sign and a tyre stack. */
+/** A mechanic's shop: roller shutter, spanner sign and a tyre stack. */
 export function drawGarage(g, near) {
   const [x, y] = toScreen(...g.pos);
   if (x < -120 || y < -120 || x > screen.w + 120 || y > screen.h + 120) return;
@@ -71,7 +71,43 @@ export function drawGarage(g, near) {
     disc(x + w / 2 + 6 * z, y - 8 * z + k * 7 * z, 1.6 * z);
   }
   if (near || camera.zoom > 0.9) outlinedText(g.name, x, y - 28 * z, screen.small ? 7 : 9, '#fff', 'center');
-  outlinedText('MODIFICA VESPA', x, y + 20 * z, screen.small ? 7 : 8, g.color, 'center');
+  if (g.tag) outlinedText(g.tag, x, y + 20 * z, screen.small ? 7 : 8, g.color, 'center');
+}
+
+/**
+ * The north gate of the stadium: iron bars across the passage when closed, a golden glow when open
+ * for the secret mission. `rect` is in tiles.
+ */
+export function drawStadiumGate([x0, y0, x1], open) {
+  const [sx, sy] = toScreen(((x0 + x1) / 2) * TILE, y0 * TILE);
+  if (sx < -200 || sy < -200 || sx > screen.w + 200 || sy > screen.h + 200) return;
+  const z = camera.zoom;
+  const y = y0 * TILE;
+  if (open) {
+    const pulse = 0.5 + 0.5 * Math.sin(time.t * 4);
+    ctx.fillStyle = `rgba(255,225,77,${0.18 + 0.2 * pulse})`;
+    const [ax, ay] = toScreen(x0 * TILE, y);
+    const [bx, by] = toScreen(x1 * TILE, y + 3 * TILE);
+    ctx.fillRect(ax, ay, bx - ax, by - ay);
+    outlinedText('INGRESSO APERTO', sx, sy - 10 * z, screen.small ? 7 : 8, '#ffe14d', 'center');
+    return;
+  }
+  ctx.strokeStyle = '#2b2e33';
+  ctx.lineWidth = 2.2 * z;
+  ctx.beginPath();
+  for (let tx = x0; tx <= x1 + 1e-6; tx += 0.25) {
+    const [bx, by] = project(tx * TILE, y, 0);
+    const [tx2, ty2] = project(tx * TILE, y, 1.3);
+    ctx.moveTo(bx, by);
+    ctx.lineTo(tx2, ty2);
+  }
+  for (const h of [0.15, 1.3]) {
+    const [ax, ay] = project(x0 * TILE, y, h);
+    const [bx, by] = project(x1 * TILE, y, h);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
 }
 
 /** Doormat + floating beacon over a customer's door. */

@@ -59,7 +59,7 @@ export const RULES = Object.freeze({
   pizzasPerOrder: [3, 7],
   familiesPerOrder: 3,
   maxPizzasPerFamily: 4,
-  firingChancePerPizza: 0.01, // per ogni pizza non consegnata
+  firingChancePerPizza: 0.05, // per ogni pizza non consegnata
   basePay: 10, // € per ogni consegna con almeno una famiglia servita
   commission: 0.2, // 20% del valore consegnato
   openings: 2, // pizzerie che assumono (segreto finché non chiedi)
@@ -72,9 +72,10 @@ export const RULES = Object.freeze({
     pizzas: 5, // per una sola famiglia…
     minDistance: (MAP_W * TILE) / 2, // …ad almeno metà mappa di distanza (px)
     time: 180,
+    payMultiplier: 2, // la consegna extra paga il doppio di un ordine normale
   },
   footballer: {
-    chance: 1 / 50, // al posto di un ordine normale
+    chance: 0.04, // al posto di un ordine normale
     name: 'Calciatore del Napoli',
     time: 90,
     maxDistance: 60 * TILE, // px: abita (o si allena) non troppo lontano
@@ -85,7 +86,44 @@ export const RULES = Object.freeze({
     cost: 1000, // l'officina di Fuorigrotta
     speed: 1.2, // la Vespa modificata va il 20% più veloce
   },
+  wear: {
+    perBump: 0.01, // ogni urto la Vespa perde l'1% della sua velocità (si accumula)
+    minCondition: 0.5, // più ammaccata di così non va: almeno metà della velocità
+    bumpSpeed: 60, // px/s: sotto questa velocità non è un urto
+  },
+  repair: {
+    costPerPoint: 3, // € per ogni punto percentuale di velocità da recuperare
+  },
+  legend: {
+    day: 10, // la missione segreta: giorno 10…
+    after: 10 * 60, // …dopo 10 minuti di gioco
+    pizzeria: 'stadio', // da disoccupato le pizze si ritirano qui
+    time: 5 * 60,
+    tip: 115, // mancia extra
+    name: 'Il Dio del Calcio',
+  },
 });
 
 /** L'officina di Fuorigrotta dove si modifica la Vespa. `at` è in coordinate-tile. */
-export const GARAGE = { name: "Officina 'O Turbo", color: '#2b8fd6', at: [70, 54] };
+export const GARAGE = { name: "Officina 'O Turbo", color: '#2b8fd6', at: [70, 54], tag: 'MODIFICA VESPA' };
+
+/** L'unica officina che ripara la Vespa: Via Gianturco. */
+export const REPAIR_SHOP = { name: 'Officina Don Peppe', color: '#3aa35b', at: [326, 42.5], tag: 'RIPARA VESPA' };
+
+/** Cosa dicono i meccanici quando arriva Gennaro (e l'uno dell'altro). */
+export const MECHANIC_LINES = {
+  repair: [
+    'Ccà se fanno sulo cose pulite, guagliò.',
+    "Chillo 'e Fuorigrotta? Primma o poi te fa fernì a Poggioreale!",
+    'Pezzi originali e fattura: io faccio cose pulite.',
+    "'E marmitte truccate 'e Fuorigrotta? Poggioreale sta a dduje passi!",
+    "Io t'aggiusto 'a Vespa comme Dio comanda. Chill'ato te porta 'n galera.",
+  ],
+  tuning: [
+    "Gianturco? Chi sente a chilli là, i napoletani se magnano 'e pizze fredde!",
+    "Cose pulite, dice isso... e 'a Margherita arriva gelata!",
+    "Si dai retta 'e meccanici 'e Gianturco, a Napule 'a pizza s'arrefredda.",
+    "Chillo 'e Gianturco va a passo d'ommo. Ccà se vola!",
+    "Poggioreale? Ma qua' Poggioreale: ccà se fa 'a Vespa ca vola!",
+  ],
+};

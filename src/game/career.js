@@ -32,12 +32,33 @@ const emptyLedger = (day) => ({
   missed: 0,
 });
 
-/** Order kinds: the normal job, a one-off run for another pizzeria, the footballer's pizza. */
-export const OrderKind = Object.freeze({ REGULAR: 'regular', SIDE: 'side', FOOTBALLER: 'footballer' });
+/**
+ * Order kinds: the normal job, a one-off run for another pizzeria, the footballer's pizza and the
+ * secret mission of day 10 (the pizza for the Dio del Calcio, inside the stadium).
+ */
+export const OrderKind = Object.freeze({
+  REGULAR: 'regular',
+  SIDE: 'side',
+  FOOTBALLER: 'footballer',
+  LEGEND: 'legend',
+});
+
+/** Orders that belong to the job (the others don't make the employer angry, nor stay behind if you quit). */
+const isJobOrder = (o) => o.kind === OrderKind.REGULAR || o.kind === OrderKind.FOOTBALLER;
 
 export class Career {
-  constructor({ pizzerias, menu, surnames, rules, findAddress, rng = Math.random, onEvent = () => {} }) {
-    Object.assign(this, { pizzerias, menu, surnames, rules, findAddress, rng, onEvent });
+  /** `stadium`: the address of the pitch, where the secret mission ends ({ x, y, label… }). */
+  constructor({
+    pizzerias,
+    menu,
+    surnames,
+    rules,
+    findAddress,
+    stadium = null,
+    rng = Math.random,
+    onEvent = () => {},
+  }) {
+    Object.assign(this, { pizzerias, menu, surnames, rules, findAddress, stadium, rng, onEvent });
     this.time = 0; // secondi di gioco dall'inizio
     this.status = 'unemployed'; // unemployed | employed | broke
     this.employer = null;
@@ -52,6 +73,7 @@ export class Career {
     this.boosts = []; // bonus del calciatore: [{ until }] in secondi di gioco
     this.sideAsked = new Map(); // pizzeria → quando ha chiesto l'ultima volta un lavoretto
     this.tunedVespas = new Set(); // Vespe modificate in officina
+    this.legendFired = false; // la missione segreta arriva una volta sola
     this.ledger = emptyLedger(1); // conti della giornata in corso
     this.rollOpenings();
   }
@@ -147,7 +169,7 @@ export class Career {
 
   leaveJob(reason) {
     const job = this.job;
-    for (const order of this.activeOrders) if (order.kind !== OrderKind.SIDE) this.closeOrder(order, { judged: false });
+    for (const order of this.activeOrders) if (isJobOrder(order)) this.closeOrder(order, { judged: false });
     this.bannedUntil.set(job.pizzeria.id, this.day + this.rules.rehireAfterDays);
     this.employer = null;
     this.job = null;
@@ -166,12 +188,12 @@ export class Career {
   }
 
   /** Builds an order and puts it on the board. `counts[i]` pizzas for family i. */
-  addOrder({ kind, pizzeria, counts, time, families, addressOptions = {} }) {
+  addOrder({ kind, pizzeria, counts, time, families, addressOptions = {}, addresses }) {
     const { rng } = this;
     const names = families ?? shuffle(this.surnames, rng);
     const taken = [pizzeria.pos];
     const stops = counts.map((n, i) => {
-      const address = this.findAddress(rng, taken, { from: pizzeria.pos, ...addressOptions });
+      const address = addresses?.[i] ?? this.findAddress(rng, taken, { from: pizzeria.pos, ...addressOptions });
       taken.push([address.x, address.y]);
       const pizzas = Array.from({ length: n }, () => pick(this.menu, rng));
       return { family: names[i], address, pizzas, delivered: false, deliveredAt: null, tip: 0 };
@@ -258,6 +280,29 @@ export class Career {
     this.emit('pickedUp', { order });
   }
 
+  // ---------------------------------------------------------------- secret mission
+  /**
+   * Day 10, after 10 minutes: someone wants a pizza inside the stadium. From the employer if Gennaro has a
+   * job, otherwise from the pizzeria next to the stadium. Once per game.
+   */
+  maybeStartLegend() {
+    const { legend } = this.rules;
+    if (this.legendFired || !legend || !this.stadium) return null;
+    if (this.day !== legend.day || this.rules.dayLength - this.dayTimeLeft < legend.after) return null;
+    this.legendFired = true;
+    const pizzeria = this.job?.pizzeria ?? this.pizzeria(legend.pizzeria);
+    const order = this.addOrder({
+      kind: OrderKind.LEGEND,
+      pizzeria,
+      counts: [1],
+      time: legend.time,
+      families: [legend.name],
+      addresses: [this.stadium],
+    });
+    this.emit('orderCreated', { order });
+    return order;
+  }
+
   // ---------------------------------------------------------------- footballer bonus
   /** Pay multiplier from the footballer's gratitude: +20% for each active bonus. */
   get payMultiplier() {
@@ -284,6 +329,22 @@ export class Career {
     return true;
   }
 
+  // ---------------------------------------------------------------- officina di Via Gianturco
+  /** € to bring a dented Vespa back to full speed. */
+  repairCost(vespa) {
+    const lost = 1 - (vespa?.condition ?? 1);
+    return Math.ceil(Math.round(lost * 1000) / 10) * this.rules.repair.costPerPoint;
+  }
+
+  repair(vespa) {
+    const cost = this.repairCost(vespa);
+    if (!vespa || cost <= 0 || this.wallet < cost || this.status === 'broke') return false;
+    this.wallet = round2(this.wallet - cost);
+    vespa.condition = 1;
+    this.emit('repaired', { vespa, cost });
+    return true;
+  }
+
   timeLeft(order) {
     return Math.max(0, order.deadline - this.time);
   }
@@ -297,7 +358,9 @@ export class Career {
   deliver(order, stop) {
     stop.delivered = true;
     stop.deliveredAt = this.time;
-    if (this.tipTimeLeft(order) > 0) {
+    if (order.kind === OrderKind.LEGEND) {
+      stop.tip = this.rules.legend.tip; // il Dio del Calcio lascia sempre la sua mancia
+    } else if (this.tipTimeLeft(order) > 0) {
       stop.tip = round2(orderValue(stop) * randRange(...this.rules.tipRange, this.rng));
     }
     order.legStart = this.time; // la mancia si calcola su ogni singola consegna
@@ -316,7 +379,9 @@ export class Career {
       commission: free ? 0 : round2(rules.commission * sum(delivered, orderValue)),
       tips: round2(sum(delivered, (x) => x.tip)),
     };
-    pay.bonus = round2((pay.base + pay.commission + pay.tips) * (this.payMultiplier - 1));
+    // La consegna extra vale il doppio; il bonus del calciatore si aggiunge a tutto.
+    const extra = order.kind === OrderKind.SIDE ? (rules.sideJob.payMultiplier ?? 1) : 1;
+    pay.bonus = round2((pay.base + pay.commission + pay.tips) * (extra * this.payMultiplier - 1));
     pay.total = round2(pay.base + pay.commission + pay.tips + pay.bonus);
 
     Object.assign(order, { state: missed ? 'failed' : 'done', pay, missed });
@@ -338,7 +403,7 @@ export class Career {
     }
 
     // Un lavoretto per un'altra pizzeria: chi ti ha assunto non ti licenzia per quello.
-    if (judged && missed && order.kind !== OrderKind.SIDE && order.pizzeria.id === this.employer) {
+    if (judged && missed && isJobOrder(order) && order.pizzeria.id === this.employer) {
       let fired = false;
       for (let k = 0; k < missed && !fired; k++) fired = this.rng() < rules.firingChancePerPizza;
       if (fired) this.leaveJob('fired');
@@ -355,6 +420,7 @@ export class Career {
 
     const job = this.job;
     if (job && this.time >= job.nextOrderAt) this.createOrder();
+    this.maybeStartLegend();
 
     const near = ([x, y], range) => Math.hypot(courier.x - x, courier.y - y) < range;
     for (const order of this.activeOrders) {
@@ -373,12 +439,65 @@ export class Career {
     // Tornato in pizzeria a mani vuote prima del prossimo ordine? Ne arriva uno a breve.
     if (!job || this.job !== job) return;
     const [, maxDelay] = this.rules.earlyOrderDelay;
-    const ownOrders = this.activeOrders.filter((o) => o.kind !== OrderKind.SIDE);
+    const ownOrders = this.activeOrders.filter(isJobOrder);
     if (near(job.pizzeria.pos, PICKUP_RANGE) && !ownOrders.length && job.nextOrderAt > this.time + maxDelay) {
       job.nextOrderAt = this.time + randRange(...this.rules.earlyOrderDelay, this.rng);
       job.earlyOrder = true;
       this.emit('earlyOrder', { in: job.nextOrderAt - this.time });
     }
+  }
+
+  // ---------------------------------------------------------------- save / load
+  /** Plain JSON snapshot. `vespas` is the list the tuned Vespas are looked up in. */
+  serialize(vespas = []) {
+    const orderJson = (o) => ({ ...o, pizzeria: o.pizzeria.id });
+    const byNumber = new Map([...this.ledger.orders, ...this.orders].map((o) => [o.number, o]));
+    return {
+      time: this.time,
+      status: this.status,
+      employer: this.employer,
+      job: this.job && { nextOrderAt: this.job.nextOrderAt, earlyOrder: this.job.earlyOrder },
+      orders: [...byNumber.values()].map(orderJson),
+      today: this.orders.map((o) => o.number),
+      ledger: { ...this.ledger, orders: this.ledger.orders.map((o) => o.number) },
+      bannedUntil: [...this.bannedUntil],
+      openings: this.openings,
+      asked: [...this.asked],
+      wallet: this.wallet,
+      daysInRed: this.daysInRed,
+      ordersCreated: this.ordersCreated,
+      boosts: this.boosts,
+      sideAsked: [...this.sideAsked],
+      tuned: [...this.tunedVespas].map((v) => vespas.indexOf(v)).filter((i) => i >= 0),
+      legendFired: this.legendFired,
+    };
+  }
+
+  /** Restores a snapshot made by `serialize` (same `vespas` list). */
+  restore(data, vespas = []) {
+    const orders = new Map(
+      data.orders.map((o) => [o.number, { ...o, pizzeria: this.pizzeria(o.pizzeria) ?? this.pizzerias[0] }]),
+    );
+    const known = (numbers) => numbers.map((n) => orders.get(n)).filter(Boolean);
+    Object.assign(this, {
+      time: data.time,
+      status: data.status,
+      employer: data.employer,
+      job: data.job && data.employer ? { ...data.job, pizzeria: this.pizzeria(data.employer) } : null,
+      orders: known(data.today),
+      ledger: { ...data.ledger, orders: known(data.ledger.orders) },
+      bannedUntil: new Map(data.bannedUntil),
+      openings: data.openings,
+      asked: new Set(data.asked),
+      wallet: data.wallet,
+      daysInRed: data.daysInRed,
+      ordersCreated: data.ordersCreated,
+      boosts: data.boosts,
+      sideAsked: new Map(data.sideAsked),
+      tunedVespas: new Set(data.tuned.map((i) => vespas[i]).filter(Boolean)),
+      legendFired: !!data.legendFired,
+    });
+    if (this.status === 'employed' && !this.job) this.status = 'unemployed';
   }
 
   emit(type, data) {

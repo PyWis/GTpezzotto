@@ -1,5 +1,7 @@
 import { TILE } from '../data/city.js';
 import { VESPA_COLORS } from '../data/people.js';
+import { RULES } from '../data/pizza.js';
+import { time } from '../core/time.js';
 
 /** Parked Vespas around the city: [tileX, tileY, heading, colour]. */
 const PARKED = [
@@ -26,7 +28,27 @@ export const vespas = PARKED.map(([tx, ty, a, c]) => ({
   v: 0,
   color: VESPA_COLORS[c],
   ridden: false,
+  condition: 1, // 1 = nuova; ogni urto la rallenta (si ripara solo a Via Gianturco)
+  lastBump: -Infinity,
 }));
+
+/** Listeners told when a Vespa gets dented (for the HUD). */
+const bumpListeners = [];
+export const onBump = (fn) => bumpListeners.push(fn);
+
+/**
+ * A crash: the Vespa loses `RULES.wear.perBump` of its speed, down to `minCondition`.
+ * Contacts closer than 0.6 s count as the same crash.
+ */
+export function bump(vespa, speed) {
+  const { perBump, minCondition, bumpSpeed } = RULES.wear;
+  if (Math.abs(speed) < bumpSpeed || time.t - vespa.lastBump < 0.6) return false;
+  vespa.lastBump = time.t;
+  const before = vespa.condition ?? 1;
+  vespa.condition = Math.max(minCondition, before * (1 - perBump));
+  for (const fn of bumpListeners) fn(vespa, before);
+  return true;
+}
 
 export function nearestFreeVespa(x, y, maxDist) {
   let best = null;
