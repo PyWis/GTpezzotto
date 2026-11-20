@@ -78,28 +78,21 @@ function drawHint(text, touch) {
 function panelLines(career, player) {
   const out = [];
   const add = (text, color = '#f3ead2', size = 0) => out.push({ text, color, size });
-  add(`${player.name.toUpperCase()} · ${euro(career.wallet)}`, '#ffd23f', 1);
+  const broke = career.wallet < 0;
+  add(`${player.name.toUpperCase()} · ${euro(career.wallet)}`, broke ? '#ff7b6b' : '#ffd23f', 1);
+  add(`GIORNO ${career.day} · finisce tra ${clock(career.dayTimeLeft)}`, '#cfc6b0');
+  if (career.daysInRed) add(`IN ROSSO: GIORNO ${career.daysInRed} DI ${career.rules.maxDaysInRed}`, '#ff5b4b');
 
-  if (career.status === 'unemployable') {
-    add('Nessuna pizzeria ti assume più.', '#ff7b6b');
-    return out;
-  }
+  if (career.status === 'broke') return out;
   if (career.status === 'unemployed') {
     add('DISOCCUPATO', '#ff9f6b');
-    add('Cerca una pizzeria con la luce verde', '#cfc6b0');
+    add('Fai il giro delle pizzerie e chiedi (E)', '#cfc6b0');
     return out;
   }
-  const shop = career.pizzeria(career.employer);
-  if (!career.onShift) {
-    add(shop.name.toUpperCase(), '#6fdc8c');
-    add(`Torna in pizzeria per il giorno ${career.day + 1}`, '#cfc6b0');
-    return out;
-  }
-  add(`${shop.name.toUpperCase()} · GIORNO ${career.day}`, '#f3ead2');
-  const left = career.shiftTimeLeft;
-  add(left > 0 ? `Fine turno tra ${clock(left)}` : 'Turno finito: completa le consegne', '#cfc6b0');
+  add(career.job.pizzeria.name.toUpperCase(), '#6fdc8c');
   const next = career.nextOrderIn;
-  if (next !== null && next > 0) add(`Prossimo ordine tra ${clock(next)}`, '#cfc6b0');
+  if (!career.activeOrders.length) add(`Prossimo ordine tra ${clock(next)}: torna in pizzeria!`, '#cfc6b0');
+  else if (next > 0) add(`Prossimo ordine tra ${clock(next)}`, '#cfc6b0');
 
   for (const order of career.activeOrders) {
     const t = career.timeLeft(order);

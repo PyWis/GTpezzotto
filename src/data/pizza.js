@@ -46,10 +46,11 @@ export const SURNAMES = [
   'Ferraiuolo',
 ];
 
-/** Le regole del lavoro da fattorino. Tempi in secondi reali. */
+/** Le regole del gioco. Tempi in secondi reali. */
 export const RULES = Object.freeze({
-  shiftLength: 20 * 60, // una giornata di consegne
-  orderInterval: 150, // ogni 2 minuti e mezzo parte una nuova consegna
+  dayLength: 20 * 60, // una giornata
+  orderInterval: 150, // ogni 2 minuti e mezzo parte una nuova consegna…
+  earlyOrderDelay: [5, 15], // …ma se torni in pizzeria a mani vuote ne arriva una dopo 5-15 s
   orderTime: 180, // 3 minuti per consegnare tutto
   tipWindow: 60, // entro il primo minuto il cliente lascia la mancia…
   tipRange: [0.05, 0.2], // …dal 5% al 20% del suo ordine
@@ -57,7 +58,10 @@ export const RULES = Object.freeze({
   familiesPerOrder: 3,
   maxPizzasPerFamily: 4,
   firingChancePerPizza: 0.01, // per ogni pizza non consegnata
-  basePay: 10, // € per ogni consegna
+  basePay: 10, // € per ogni consegna con almeno una famiglia servita
   commission: 0.2, // 20% del valore consegnato
-  openings: 2, // pizzerie che assumono quando sei disoccupato
+  openings: 2, // pizzerie che assumono (segreto finché non chiedi)
+  rehireAfterDays: 10, // dopo che te ne vai, quella pizzeria potrebbe riprenderti
+  livingCost: [100, 200], // € al giorno per vivere
+  maxDaysInRed: 3, // giorni di fila sotto zero prima del game over
 });
