@@ -1,5 +1,5 @@
 import { clamp } from '../core/math.js';
-import { clock, euro } from '../core/format.js';
+import { clock, euro, plural } from '../core/format.js';
 import { time } from '../core/time.js';
 import { ctx, fitText, outlinedText, pixelFont, screen, withAlpha, wrapText } from './canvas.js';
 import { camera } from './camera.js';
@@ -82,29 +82,42 @@ function panelLines(career, player) {
   add(`${player.name.toUpperCase()} · ${euro(career.wallet)}`, broke ? '#ff7b6b' : '#ffd23f', 1);
   add(`GIORNO ${career.day} · finisce tra ${clock(career.dayTimeLeft)}`, '#cfc6b0');
   if (career.daysInRed) add(`IN ROSSO: GIORNO ${career.daysInRed} DI ${career.rules.maxDaysInRed}`, '#ff5b4b');
+  if (career.payMultiplier > 1) {
+    const pct = Math.round((career.payMultiplier - 1) * 100);
+    const lastDay = Math.round(career.boostUntil / career.rules.dayLength);
+    add(`BONUS CALCIATORE +${pct}% fino al giorno ${lastDay}`, '#5ec8ff');
+  }
 
   if (career.status === 'broke') return out;
   if (career.status === 'unemployed') {
     add('DISOCCUPATO', '#ff9f6b');
     add('Fai il giro delle pizzerie e chiedi (E)', '#cfc6b0');
-    return out;
+  } else {
+    add(career.job.pizzeria.name.toUpperCase(), '#6fdc8c');
+    const next = career.nextOrderIn;
+    const own = career.activeOrders.filter((o) => o.kind !== 'side');
+    if (!own.length) add(`Prossimo ordine tra ${clock(next)}: torna in pizzeria!`, '#cfc6b0');
+    else if (next > 0) add(`Prossimo ordine tra ${clock(next)}`, '#cfc6b0');
   }
-  add(career.job.pizzeria.name.toUpperCase(), '#6fdc8c');
-  const next = career.nextOrderIn;
-  if (!career.activeOrders.length) add(`Prossimo ordine tra ${clock(next)}: torna in pizzeria!`, '#cfc6b0');
-  else if (next > 0) add(`Prossimo ordine tra ${clock(next)}`, '#cfc6b0');
 
   for (const order of career.activeOrders) {
     const t = career.timeLeft(order);
     const urgent = t < 30;
     const tip = career.tipTimeLeft(order);
+    const title =
+      order.kind === 'footballer'
+        ? 'CALCIATORE DEL NAPOLI'
+        : order.kind === 'side'
+          ? `EXTRA ${order.pizzeria.name.toUpperCase()}`
+          : `#${order.number}`;
+    const color = order.kind === 'footballer' ? '#5ec8ff' : order.kind === 'side' ? '#ff9f40' : STOP_COLOR;
     add(
-      `#${order.number}  ${clock(t)}${tip > 0 && order.pickedUp ? `  MANCIA ${clock(tip)}` : ''}`,
-      urgent && Math.sin(time.t * 10) > 0 ? '#ff5b4b' : STOP_COLOR,
+      `${title}  ${clock(t)}${tip > 0 && order.pickedUp ? `  MANCIA ${clock(tip)}` : ''}`,
+      urgent && Math.sin(time.t * 10) > 0 ? '#ff5b4b' : color,
       1,
     );
     if (!order.pickedUp) {
-      add(`  ritira ${order.pizzaCount} pizze in pizzeria`, '#ffffff');
+      add(`  ritira ${plural(order.pizzaCount, 'pizza', 'pizze')} in pizzeria`, '#ffffff');
       continue;
     }
     for (const s of order.stops) {

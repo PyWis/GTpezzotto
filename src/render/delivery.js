@@ -40,27 +40,61 @@ export function drawPizzeria(p, status, near) {
   if (status.tag) outlinedText(status.tag, x, y + 20 * z, screen.small ? 7 : 8, status.color, 'center');
 }
 
+/** The mechanic's shop in Fuorigrotta: roller shutter, spanner sign and a tyre stack. */
+export function drawGarage(g, near) {
+  const [x, y] = toScreen(...g.pos);
+  if (x < -120 || y < -120 || x > screen.w + 120 || y > screen.h + 120) return;
+  const z = camera.zoom;
+  const w = 34 * z;
+  ctx.fillStyle = '#5b6168';
+  ctx.fillRect(x - w / 2, y - 18 * z, w, 12 * z);
+  ctx.fillStyle = '#7d848c';
+  for (let k = 0; k < 4; k++) ctx.fillRect(x - w / 2, y - 17 * z + k * 3 * z, w, 1.2 * z);
+  ctx.fillStyle = g.color;
+  ctx.fillRect(x - w / 2, y - 22 * z, w, 4 * z);
+  // Spanner.
+  ctx.strokeStyle = '#e8e8e8';
+  ctx.lineWidth = 2.4 * z;
+  ctx.beginPath();
+  ctx.moveTo(x - 5 * z, y + 6 * z);
+  ctx.lineTo(x + 4 * z, y - 3 * z);
+  ctx.stroke();
+  ctx.fillStyle = '#e8e8e8';
+  disc(x + 5 * z, y - 4 * z, 3 * z);
+  ctx.fillStyle = '#5b6168';
+  disc(x + 6 * z, y - 5 * z, 1.3 * z);
+  // Tyres.
+  for (let k = 0; k < 2; k++) {
+    ctx.fillStyle = '#1d1d1f';
+    disc(x + w / 2 + 6 * z, y - 8 * z + k * 7 * z, 4 * z);
+    ctx.fillStyle = '#55575b';
+    disc(x + w / 2 + 6 * z, y - 8 * z + k * 7 * z, 1.6 * z);
+  }
+  if (near || camera.zoom > 0.9) outlinedText(g.name, x, y - 28 * z, screen.small ? 7 : 9, '#fff', 'center');
+  outlinedText('MODIFICA VESPA', x, y + 20 * z, screen.small ? 7 : 8, g.color, 'center');
+}
+
 /** Doormat + floating beacon over a customer's door. */
-export function drawStop(stop, order, isNext) {
+export function drawStop(stop, order, isNext, color = STOP_COLOR) {
   const [gx, gy] = toScreen(stop.address.x, stop.address.y);
   if (gx < -200 || gy < -200 || gx > screen.w + 200 || gy > screen.h + 200) return;
   const z = camera.zoom;
   const pulse = 0.5 + 0.5 * Math.sin(time.t * 5);
-  ctx.strokeStyle = STOP_COLOR;
+  ctx.strokeStyle = color;
   ctx.lineWidth = 3 * z;
   ctx.globalAlpha = 0.4 + 0.5 * pulse;
   ctx.beginPath();
   ctx.arc(gx, gy, (14 + pulse * 8) * z, 0, TAU);
   ctx.stroke();
   ctx.globalAlpha = 1;
-  drawBeacon(stop.address.x, stop.address.y, STOP_COLOR, String(stop.pizzas.length));
+  drawBeacon(stop.address.x, stop.address.y, color, String(stop.pizzas.length));
   const [tx, ty] = project(stop.address.x, stop.address.y, 4.6);
   outlinedText(
     `${stop.family} · #${order.number}`,
     tx,
     ty - 18,
     screen.small ? 7 : 9,
-    isNext ? STOP_COLOR : '#fff',
+    isNext ? color : '#fff',
     'center',
   );
 }

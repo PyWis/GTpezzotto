@@ -66,11 +66,11 @@ export function updateOnFoot(dt) {
 }
 
 /** Arcade Vespa physics. Returns the impact strength (for screen shake), or 0. */
-export function updateRiding(dt) {
+export function updateRiding(dt, boost = 1) {
   const v = player.vespa;
-  const topSpeed = tileAtPoint(v.x, v.y) === Tile.PARK ? 160 : VESPA_TOP_SPEED;
+  const topSpeed = (tileAtPoint(v.x, v.y) === Tile.PARK ? 160 : VESPA_TOP_SPEED) * boost;
 
-  if (keys.up) v.v += (v.v < 0 ? 520 : 250) * dt;
+  if (keys.up) v.v += (v.v < 0 ? 520 : 250 * boost) * dt;
   else if (keys.down) v.v -= (v.v > 0 ? 520 : 150) * dt;
   else v.v -= Math.sign(v.v) * Math.min(Math.abs(v.v), 95 * dt);
   if (keys.brake) v.v -= Math.sign(v.v) * Math.min(Math.abs(v.v), 420 * dt);

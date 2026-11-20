@@ -6,12 +6,12 @@ import { ctx, disc, ellipse, inFrame, roundRect, screen } from './canvas.js';
 const TROUSERS = '#2b3550';
 
 /** A person seen from above. `phase` animates the stride. */
-export function drawPerson(sx, sy, angle, { shirt, hair, skin }, phase = 0, moving = false) {
+export function drawPerson(sx, sy, angle, { shirt, hair, skin, trousers = TROUSERS }, phase = 0, moving = false) {
   inFrame(sx, sy, angle, camera.zoom, () => {
     ctx.fillStyle = 'rgba(0,0,0,.25)';
     ellipse(1.5, 1.5, 6, 7.5);
     const stride = moving ? Math.sin(phase) * 4 : 0;
-    ctx.fillStyle = TROUSERS;
+    ctx.fillStyle = trousers;
     ctx.fillRect(-2 + stride, -4.6, 5, 3.2);
     ctx.fillRect(-2 - stride, 1.4, 5, 3.2);
     ctx.fillStyle = skin;

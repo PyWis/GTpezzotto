@@ -1,7 +1,7 @@
 import { hash, TAU } from '../core/math.js';
 import { shade } from '../core/color.js';
 import { time } from '../core/time.js';
-import { LANDMARKS, METRO_LINES, ROADS, TILE } from '../data/city.js';
+import { LANDMARKS, METRO_LINES, PLAZAS, ROADS, TILE } from '../data/city.js';
 import { grid, index, inBounds, tileAt } from '../world/map.js';
 import { Tile } from '../world/tiles.js';
 import { freightTrain } from '../entities/transit.js';
@@ -14,7 +14,7 @@ const BEACH_UMBRELLAS = ['#e64b3c', '#3d7fd0', '#f5d142'];
 /** Each painter fills one ground tile. (sx, sy) is the top-left corner, s its size. */
 const PAINTERS = {
   [Tile.ROAD](sx, sy, s, z, x, y, i, n) {
-    if (ROADS[grid.road[i]].kind === 'vicolo') {
+    if (i >= 0 && ROADS[grid.road[i]].kind === 'vicolo') {
       // Basoli: paving stones in staggered rows.
       ctx.fillStyle = '#5e5750';
       ctx.fillRect(sx, sy, s, s);
@@ -26,7 +26,7 @@ const PAINTERS = {
       ctx.fillRect(sx + o + q * 0.5, sy, 1, q);
       ctx.fillRect(sx + o + q * 1.5, sy + q, 1, q);
       ctx.fillRect(sx + o + q * 0.9, sy + 2 * q, 1, q);
-    } else if (grid.tunnel[i]) {
+    } else if (i >= 0 && grid.tunnel[i]) {
       ctx.fillStyle = '#2e2e33';
       ctx.fillRect(sx, sy, s, s);
       if ((x + y) % 3 === 0) {
@@ -49,7 +49,15 @@ const PAINTERS = {
     ctx.fillRect(sx, sy, s, 1);
     ctx.fillRect(sx, sy, 1, s);
   },
-  [Tile.PLAZA](sx, sy, s, z, x, y, i) {
+  [Tile.PLAZA](sx, sy, s, z, x, y, i, n) {
+    if (PLAZAS[grid.plaza[i]]?.parking) {
+      // Parcheggio: asfalto con le strisce bianche degli stalli.
+      ctx.fillStyle = n < 0.5 ? '#55565b' : '#58595e';
+      ctx.fillRect(sx, sy, s, s);
+      ctx.fillStyle = 'rgba(240,240,232,.75)';
+      ctx.fillRect(sx, sy, Math.max(1, 1.6 * z), s * 0.7);
+      return;
+    }
     const basalt = grid.plaza[i] === 0;
     const odd = (x + y) % 2;
     ctx.fillStyle = basalt ? (odd ? '#c6c0b2' : '#bdb7a8') : odd ? '#d3c5a5' : '#cbbd9c';

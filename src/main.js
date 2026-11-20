@@ -37,15 +37,20 @@ import { isTalking, say } from './entities/speech.js';
 import {
   career,
   currentObjective,
+  footballerOrder,
+  GARAGE,
   jobMarkers,
   nearestPizzeria,
+  nearGarage,
+  openGarage,
   openPizzeria,
   pendingStops,
   pizzasOnBoard,
   pizzeriaLook,
+  stopColor,
 } from './game/job.js';
 import { MAX_HANDOFF_SPEED } from './game/career.js';
-import { PIZZERIAS } from './data/pizza.js';
+import { PIZZERIAS, RULES } from './data/pizza.js';
 import { canvas, ctx, resize, screen } from './render/canvas.js';
 import { addShake, baseZoom, beginFrame, camera, follow, isVisible, toScreen, visibleTiles } from './render/camera.js';
 import { drawGround } from './render/ground.js';
@@ -53,7 +58,7 @@ import { drawBubble, drawCar, drawFallenPerson, drawPerson, drawTree, drawVespa 
 import { drawEffects } from './render/effects.js';
 import { drawBuildings } from './render/buildings.js';
 import { drawFunicolari, drawMetroOverlay } from './render/transit.js';
-import { drawGuide, drawPizzeria, drawStop } from './render/delivery.js';
+import { drawGarage, drawGuide, drawPizzeria, drawStop } from './render/delivery.js';
 import { drawHud, showBanner, tickHud } from './render/hud.js';
 import {
   closeStreetMap,
@@ -100,6 +105,8 @@ function availableAction() {
   if (player.mode === 'vespa') {
     const shop = speed() < 40 && nearestPizzeria(player.x, player.y);
     if (shop) return { label: `E · ${shop.name.toUpperCase()}`, run: () => openPizzeria(shop) };
+    if (speed() < 40 && nearGarage(player.x, player.y))
+      return { label: `E · ${GARAGE.name.toUpperCase()}`, run: () => openGarage(player.vespa) };
     if (speed() < 5 && game.hintTime <= 0) return { label: 'E · SCENDI', run: getOff };
     return { label: null, run: getOff };
   }
@@ -107,6 +114,7 @@ function availableAction() {
 
   const shop = nearestPizzeria(player.x, player.y);
   if (shop) return { label: `E · ${shop.name.toUpperCase()}`, run: () => openPizzeria(shop) };
+  if (nearGarage(player.x, player.y)) return { label: `E · ${GARAGE.name.toUpperCase()}`, run: () => openGarage(null) };
   const vespa = nearestFreeVespa(player.x, player.y, MOUNT_RANGE);
   if (vespa)
     return {
@@ -245,11 +253,12 @@ function update(dt) {
       updateOnFoot(dt);
       break;
     case 'vespa':
-      shake = updateRiding(dt);
+      shake = updateRiding(dt, career.isTuned(player.vespa) ? RULES.tuning.speed : 1);
       break;
   }
   if (player.sayT > 0) player.sayT -= dt;
   shake = Math.max(shake, people.updatePedestrians(dt), traffic.updateTraffic(dt));
+  updateFootballer(dt);
   if (shake) addShake(shake);
 
   const district = districtAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
@@ -313,7 +322,8 @@ function modeLabel() {
   if (player.mode === 'funicular') return [funicularRide.line.name.toUpperCase(), '#cfc6b0'];
   if (player.mode === 'vespa') {
     const cargo = pizzasOnBoard();
-    return [`VESPA  ${kmh(player.vespa.v)} KM/H${cargo ? `  · 🍕 ${cargo}` : ''}`, '#ffd23f'];
+    const turbo = career.isTuned(player.vespa) ? ' TURBO' : '';
+    return [`VESPA${turbo}  ${kmh(player.vespa.v)} KM/H${cargo ? `  · 🍕 ${cargo}` : ''}`, '#ffd23f'];
   }
   const cargo = pizzasOnBoard();
   return [`A PIEDI${cargo ? `  · 🍕 ${cargo}` : ''}`, '#cfc6b0'];
@@ -340,6 +350,43 @@ function hintText() {
   return null;
 }
 
+// The Napoli player waiting on the pavement for his pizza: azzurro shirt, white shorts, a ball at his feet.
+const footballer = { shirt: '#1d9be0', trousers: '#ffffff', hair: '#2a1a10', skin: '#c99a70', say: '', sayT: 0 };
+const FOOTBALLER_LINES = ["Uè, 'a pizza!", 'Forza Napoli!', "Jamme, ca m'aggia allenà!", 'Sto murenno ’e famme!'];
+
+function updateFootballer(dt) {
+  const order = footballerOrder();
+  if (!order) return;
+  const { address } = order.stops[0];
+  Object.assign(footballer, { x: address.x + 10, y: address.y - 6, order });
+  if (footballer.sayT > 0) footballer.sayT -= dt;
+  else if (Math.hypot(player.x - footballer.x, player.y - footballer.y) < 260 && Math.random() < dt * 0.4)
+    say(footballer, FOOTBALLER_LINES[Math.floor(Math.random() * FOOTBALLER_LINES.length)], 2.2);
+}
+
+function drawFootballer() {
+  const order = footballerOrder();
+  if (!order || footballer.order !== order || !isVisible(footballer.x, footballer.y)) return;
+  const { x, y } = footballer;
+  const a = Math.atan2(player.y - y, player.x - x);
+  // Palleggi: the ball bounces in front of him.
+  const bounce = Math.abs(Math.sin(time.t * 4));
+  const [bx, by] = toScreen(x + Math.cos(a) * 11, y + Math.sin(a) * 11);
+  const z = camera.zoom;
+  ctx.fillStyle = 'rgba(0,0,0,.25)';
+  ctx.beginPath();
+  ctx.ellipse(bx + 1.5 * z, by + 1.5 * z, 3 * z, 2.4 * z, 0, 0, Math.PI * 2);
+  ctx.fill();
+  drawPerson(...toScreen(x, y), a, footballer, time.t * 6, false);
+  ctx.fillStyle = '#fff';
+  ctx.strokeStyle = '#222';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(bx, by - bounce * 6 * z, 3 * z, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+}
+
 function drawWorld() {
   const view = visibleTiles();
   drawGround(view);
@@ -349,7 +396,9 @@ function drawWorld() {
     if (p.down > 0 && isVisible(p.x, p.y)) drawFallenPerson(...toScreen(p.x, p.y), p.a, p);
   for (const p of people.pedestrians)
     if (p.down <= 0 && isVisible(p.x, p.y)) drawPerson(...toScreen(p.x, p.y), p.a, p, p.walk, true);
+  for (const c of traffic.parkedCars) if (isVisible(c.x, c.y)) drawCar(c);
   for (const c of traffic.cars) if (isVisible(c.x, c.y)) drawCar(c);
+  drawFootballer();
   if (player.mode === 'foot') drawPerson(...toScreen(player.x, player.y), player.a, player, player.walk, player.moving);
   else if (player.mode === 'vespa') drawVespa(player.vespa, player, pizzasOnBoard());
 
@@ -362,11 +411,13 @@ function drawWorld() {
   // Shop signs stay readable above the roofs of the vicoli.
   for (const p of PIZZERIAS)
     drawPizzeria(p, pizzeriaLook(p), Math.hypot(p.pos[0] - player.x, p.pos[1] - player.y) < 200);
+  drawGarage(GARAGE, Math.hypot(GARAGE.pos[0] - player.x, GARAGE.pos[1] - player.y) < 200);
   const next = currentObjective(player);
   for (const { order, stop } of pendingStops())
-    drawStop(stop, order, next && next.x === stop.address.x && next.y === stop.address.y);
+    drawStop(stop, order, next && next.x === stop.address.x && next.y === stop.address.y, stopColor(order));
   for (const p of people.pedestrians) if (isTalking(p) && isVisible(p.x, p.y)) drawBubble(p.x, p.y, p.say);
   for (const c of traffic.cars) if (isTalking(c) && isVisible(c.x, c.y)) drawBubble(c.x, c.y, c.say);
+  if (footballerOrder() && isTalking(footballer)) drawBubble(footballer.x, footballer.y, footballer.say);
   if (isTalking(player)) drawBubble(player.x, player.y, player.say);
   if (game.started && isOnStreet()) drawGuide(player, next);
 }

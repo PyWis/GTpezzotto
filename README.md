@@ -17,10 +17,25 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
 - Ogni ordine ha **da 3 a 7 pizze**, divise fra **tre famiglie** (massimo 4 pizze a famiglia) che abitano in palazzi a
   caso in tutta Napoli.
 - Hai **3 minuti** per ritirare le pizze in pizzeria e consegnarle tutte.
-- Se consegni **entro il primo minuto** la famiglia ti lascia una **mancia dal 5% al 20%** del suo ordine.
+- La mancia si calcola su **ogni singola consegna**: se servi una famiglia **entro un minuto** dal ritiro (o dalla
+  consegna precedente) ti lascia una **mancia dal 5% al 20%** della sua parte d'ordine. Il minuto riparte dopo ogni
+  famiglia.
 - Paga per ogni ordine: **10 €** fissi (solo se hai servito almeno una famiglia) + il **20%** del valore delle pizze
   consegnate + le mance.
 - Per ogni pizza non consegnata c'è l'**1% di probabilità di essere licenziato**.
+
+### Extra
+
+- **Consegne extra**: chiedendo (E) a una pizzeria che non è la tua, nel **25%** dei casi ha una consegna da affidarti:
+  **5 pizze per una sola famiglia**, ad **almeno metà mappa** di distanza, 3 minuti di tempo, pagata come un ordine
+  normale. Una alla volta; alla stessa pizzeria si può richiedere dopo 2 minuti e mezzo. Funziona anche da disoccupati, e
+  perderla non fa licenziare.
+- **Il calciatore del Napoli**: una volta su 50, al posto di un ordine normale, «un calciatore del Napoli ti ha chiesto
+  una pizza». Una pizza, **90 secondi**, nessun guadagno (la pizza è gratis), ma se arrivi in tempo per **i 2 giorni
+  successivi** tutti i guadagni sono del **+20%**. Il bonus si accumula (due calciatori = +40%). Il calciatore aspetta
+  per strada, in maglia azzurra, palleggiando.
+- **Officina 'O Turbo** (Fuorigrotta, Via Leopardi): portaci la Vespa e per **1000 €** la modificano; quella Vespa va il
+  **20% più veloce**.
 
 Le pizze si caricano passando davanti alla porta della pizzeria e si consegnano passando piano davanti al portone del
 cliente. La freccia attorno a Gennaro indica l'obiettivo più vicino.
@@ -33,7 +48,7 @@ cliente. La freccia attorno a Gennaro indica l'obiettivo più vicino.
 | ← → / A D | gira |
 | Shift | corri (a piedi) |
 | Spazio | freno a mano |
-| E | Vespa, pizzeria, funicolare, metro |
+| E | Vespa, pizzeria, officina, funicolare, metro |
 | H | clacson |
 | M | stradario (rotella / pizzica per lo zoom) |
 | N | audio on/off |
@@ -56,7 +71,16 @@ e apri `http://localhost:8080`. Funziona così com'è anche su GitHub Pages.
 npm test
 ```
 
-I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance, paga, licenziamenti, spese giornaliere e game over.
+I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, l'officina, spese giornaliere e game over.
+
+## La città
+
+Il traffico gira da una strada all'altra agli incroci e attraversa le piazze. Le strade che escono dalla mappa
+(Tangenziale, Via Coroglio, Via Nuova Agnano, Via Terracina, Via Pessina, Via Kerbaker e le strade di San Giovanni)
+continuano oltre il bordo: le auto escono dalla città e ne entrano altre. Le strade senza uscita dentro la città finiscono
+in un parcheggio (Sant'Elmo, Medina, Borgo Marinari, Cilea, Belvedere, Nisida), dove le auto sostano e poi ripartono.
+A ovest c'è la spiaggia di Bagnoli con il Pontile Nord; Nisida è davanti a Coroglio; il Vesuvio è a est, oltre San
+Giovanni a Teduccio.
 
 ## Struttura del codice
 
@@ -65,7 +89,8 @@ src/
   main.js              ciclo di gioco: input → simulazione → rendering
   core/                matematica, colori, formattazione, tempo
   data/                dati puri: geografia di Napoli, persone, menù e regole delle pizzerie
-  world/               costruzione della mappa a tile, collisioni, alberi
+  world/               costruzione della mappa a tile, collisioni, alberi; roadnet.js: incroci, uscite dalla città e
+                       parcheggi per il traffico
   entities/            Gennaro, Vespe, pedoni, traffico, funicolari e metro
   game/
     career.js          regole del lavoro (logica pura, testata)

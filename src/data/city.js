@@ -10,7 +10,7 @@ const road = (name, kind, width, path) => ({ name, kind, width, path });
 /** Road classes, from the narrowest to the widest. */
 export const ROAD_PRIORITY = { vicolo: 1, street: 2, main: 3, hwy: 4 };
 
-export const COASTLINE = [[0, 92], [20, 94], [40, 99], [70, 101], [86, 106], [96, 100], [102, 95], [104, 92], [159, 92], [164, 93], [176, 93], [184, 87], [188, 83], [234, 83], [242, 88], [300, 88], [354, 90]];
+export const COASTLINE = [[0, 97], [20, 98], [40, 100], [70, 100], [80, 101], [86, 106], [96, 100], [102, 95], [104, 92], [159, 92], [164, 93], [176, 93], [184, 87], [188, 83], [234, 83], [242, 88], [300, 88], [316, 89], [324, 93], [330, 100], [334, 112], [354, 112]];
 
 export const ROADS = [
   road('Via Caracciolo', 'main', 3, [[106, 89], [156, 89]]),
@@ -23,7 +23,7 @@ export const ROADS = [
   road('Via Santa Lucia', 'street', 2, [[176, 87], [176, 76]]),
   road('Corso Vittorio Emanuele', 'street', 2, [[110, 86], [114, 70], [126, 60], [144, 56], [160, 48], [168, 38], [176, 33]]),
   road('Via Toledo', 'main', 3, [[181, 36], [181, 62]]),
-  road('Via Pessina', 'main', 3, [[181, 14], [181, 36]]),
+  road('Via Pessina', 'main', 3, [[181, -30], [181, 36]]),
   road('Via Scarlatti', 'main', 3, [[120, 30], [160, 30]]),
   road('Via Luca Giordano', 'street', 2, [[138, 16], [138, 57]]),
   road('Via Cimarosa', 'street', 2, [[152, 22], [152, 52]]),
@@ -51,7 +51,7 @@ export const ROADS = [
   road('Via Eldorado', 'street', 2, [[167, 90], [167, 98]]),
   road('Via Cilea', 'street', 2, [[106, 50], [118, 46], [128, 46]]),
   road('Via Merliani', 'street', 2, [[128, 24], [152, 24]]),
-  road('Via Kerbaker', 'street', 2, [[128, 8], [128, 20]]),
+  road('Via Kerbaker', 'street', 2, [[128, -30], [128, 20]]),
   road('Via Simone Martini', 'street', 2, [[106, 16], [138, 16]]),
   road('Via Belvedere', 'street', 2, [[106, 36], [120, 30]]),
   road('Via del Parco Margherita', 'street', 2, [[154, 77], [154, 51]]),
@@ -59,30 +59,40 @@ export const ROADS = [
   road('Via Giulio Cesare', 'main', 3, [[80, 61], [80, 34]]),
   road('Via Leopardi', 'street', 2, [[52, 52], [80, 52]]),
   road('Via Lepanto', 'street', 2, [[64, 34], [64, 66]]),
-  road('Via Terracina', 'main', 3, [[52, 92], [52, 30]]),
+  road('Via Terracina', 'main', 3, [[52, 92], [52, -30]]),
   road('Viale Kennedy', 'main', 3, [[44, 92], [85, 92]]),
   road('Discesa Coroglio', 'street', 2, [[85, 92], [85, 100], [88, 100]]),
   road('Via Posillipo', 'street', 2, [[88, 100], [96, 98], [102, 94], [107, 90]]),
   road('Galleria Quattro Giornate', 'main', 3, [[84, 67], [94, 72], [102, 80], [107, 84]]),
   road('Galleria Laziale', 'street', 2, [[84, 61], [96, 63], [104, 70], [109, 76]]),
-  road('Tangenziale', 'hwy', 3, [[44, 34], [80, 34], [94, 22], [106, 12], [140, 12]]),
+  road('Tangenziale', 'hwy', 3, [[44, 34], [80, 34], [94, 22], [106, 12], [140, 12], [150, 9], [156, 2], [157, -30]]),
   road('Via Taddeo da Sessa', 'main', 3, [[254, 18], [298, 18]]),
   road('Corso Malta', 'main', 3, [[298, 18], [298, 80]]),
   road('Via Giovanni Porzio', 'main', 3, [[264, 18], [264, 66]]),
   road('Via Galileo Ferraris', 'main', 3, [[245, 66], [298, 66]]),
-  road('Via Coroglio', 'main', 3, [[4, 86], [26, 89], [44, 92]]),
+  road('Via Coroglio', 'main', 3, [[-30, 86], [4, 86], [26, 89], [44, 92]]),
   road('Via Diocleziano', 'main', 3, [[24, 34], [24, 88]]),
-  road('Tangenziale', 'hwy', 3, [[4, 34], [44, 34]]),
+  road('Tangenziale', 'hwy', 3, [[-30, 34], [44, 34]]),
   road("Via Cavalleggeri d'Aosta", 'street', 2, [[24, 62], [52, 62]]),
-  road('Via Nuova Agnano', 'street', 2, [[4, 48], [24, 48]]),
+  road('Via Nuova Agnano', 'street', 2, [[-30, 48], [24, 48]]),
   road('Via Bagnoli', 'street', 2, [[24, 74], [52, 74]]),
-  road('Via Nisida', 'street', 2, [[8, 88], [8, 102]]),
-  road('Via Taddeo da Sessa', 'main', 3, [[298, 18], [352, 18]]),
-  road('Via Gianturco', 'main', 3, [[298, 40], [352, 40]]),
-  road('Via Galileo Ferraris', 'main', 3, [[298, 66], [352, 66]]),
-  road('Corso San Giovanni a Teduccio', 'main', 3, [[298, 80], [352, 80]]),
+  road('Via Nisida', 'street', 2, [[85, 100], [81, 101.5], [77, 104]]),
+  road('Via Taddeo da Sessa', 'main', 3, [[298, 18], [384, 18]]),
+  road('Via Gianturco', 'main', 3, [[298, 40], [384, 40]]),
+  road('Via Galileo Ferraris', 'main', 3, [[298, 66], [384, 66]]),
+  road('Corso San Giovanni a Teduccio', 'main', 3, [[298, 80], [384, 80]]),
   road('Via Ponte dei Francesi', 'street', 2, [[316, 18], [316, 80]]),
   road("Via Brecce a Sant'Erasmo", 'street', 2, [[336, 18], [336, 80]]),
+];
+
+/** Parcheggi in fondo alle strade senza uscita: le auto ci entrano, sostano e ripartono. */
+export const PARKINGS = [
+  { name: "Parcheggio Sant'Elmo", rect: [160, 26, 167, 31] },
+  { name: 'Parcheggio Medina', rect: [200, 47, 208, 50] },
+  { name: 'Parcheggio Borgo Marinari', rect: [168, 96, 174, 99] },
+  { name: 'Parcheggio Cilea', rect: [104, 50, 109, 54] },
+  { name: 'Parcheggio Belvedere', rect: [104, 36, 109, 40] },
+  { name: 'Parcheggio di Nisida', rect: [73, 104, 78, 107] },
 ];
 
 export const PLAZAS = [
@@ -114,9 +124,9 @@ export const QUAYS = [
   { name: 'Porto', rect: [228, 82, 235, 96] },
   { name: 'Porticciolo di Mergellina', rect: [112, 92, 117, 99] },
   { name: 'Borgo Marinari', rect: [161, 96, 174, 107] },
-  { name: 'Pontile Nord', rect: [13, 90, 16, 108] },
+  { name: 'Pontile Nord', rect: [6, 96, 9, 109] },
   { name: 'Darsena di San Giovanni', rect: [306, 88, 312, 98] },
-  { name: 'Darsena Petroli', rect: [322, 88, 330, 96] },
+  { name: 'Darsena Petroli', rect: [318, 90, 324, 98] },
 ];
 
 export const LANDMARKS = [
@@ -206,21 +216,24 @@ export const METRO_LINES = [
 
 /** Colline e montagne: la collina di Posillipo/Vomero, il Vesuvio e Nisida. */
 export const HILL = { x0: 86, x1: 104, y0: 24 };
-export const VESUVIUS = { center: [255, 101], radius: 13 };
-export const NISIDA = { center: [7, 106], radius: 4.5 };
+export const VESUVIUS = { center: [342, 101], radius: 12 }; // a est, oltre San Giovanni a Teduccio
+export const NISIDA = { center: [75, 106.5], radius: 4 }; // l'isolotto davanti a Coroglio
+/** Le spiagge: sabbia fra la strada e il mare. */
+export const BEACHES = [{ name: 'Spiaggia di Bagnoli', rect: [2, 88, 44, 101] }];
 export const BROWNFIELDS = [[2, 60, 22, 84]];
 export const RAILYARD = { rect: [300, 44, 352, 52], trackY: 48 };
 
 /** Quartieri, valutati in ordine: vince la prima regola che corrisponde. */
 const DISTRICT_RULES = [
+  ['Vesuvio', (x, y) => Math.hypot(x - VESUVIUS.center[0], (y - VESUVIUS.center[1]) * 1.1) < VESUVIUS.radius + 1],
   ['Bagnoli', (x) => x < 40],
+  ['Bagnoli', (x, y) => x < HILL.x0 && y >= 95], // Coroglio e Nisida
   ['San Giovanni a Teduccio', (x) => x >= 298],
   ['Fuorigrotta', (x) => x < HILL.x0],
   ['Posillipo', (x, y) => x < HILL.x1 && y >= HILL.y0],
   ['Vomero', (x) => x < HILL.x1],
   ['Centro Direzionale', (x, y) => x >= 262 && y < 72],
   ['Borgo Marinari', (x, y) => y >= 95 && x >= 159 && x < 176],
-  ['Vesuvio', (x, y) => x >= 239 && y >= 86],
   ['Quartieri Spagnoli', (x, y) => x >= 163 && x < 180 && y >= 38 && y < 62],
   ['Mergellina', (x, y) => x < 124 && y >= 62],
   ['Vomero', (x, y) => x < 163 && y < 60],
