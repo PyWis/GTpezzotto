@@ -79,8 +79,8 @@ Il traffico gira da una strada all'altra agli incroci e attraversa le piazze. Le
 (Tangenziale, Via Coroglio, Via Nuova Agnano, Via Terracina, Via Pessina, Via Kerbaker e le strade di San Giovanni)
 continuano oltre il bordo: le auto escono dalla città e ne entrano altre. Le strade senza uscita dentro la città finiscono
 in un parcheggio (Sant'Elmo, Medina, Borgo Marinari, Cilea, Belvedere, Nisida), dove le auto sostano e poi ripartono.
-A ovest c'è la spiaggia di Bagnoli con il Pontile Nord; Nisida è davanti a Coroglio; il Vesuvio è a est, oltre San
-Giovanni a Teduccio.
+A ovest c'è la spiaggia di Bagnoli con il Pontile Nord; Nisida è all'estremo ovest, collegata da Via Nisida; il
+Vesuvio è a est, oltre San Giovanni a Teduccio.
 
 ## Struttura del codice
 
