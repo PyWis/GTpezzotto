@@ -2,7 +2,7 @@
 
 import { time } from './core/time.js';
 import { LANDMARKS, STADIUM_GATE, TILE, VESUVIUS, districtAt } from './data/city.js';
-import { HORN_REPLIES } from './data/people.js';
+import { HORN_REPLIES, RUMORS } from './data/people.js';
 import { audio, initAudio, setEngine, sfx, toggleMute } from './audio.js';
 import { bindInput, keys, onCommand } from './input.js';
 import { inStadium, isInTunnel, placeNameAt, stadiumGate } from './world/map.js';
@@ -14,6 +14,8 @@ import {
   mount,
   MOUNT_RANGE,
   player,
+  SHIRT_AZZURRA,
+  SHIRT_RED,
   speed,
   updateOnFoot,
   updateRiding,
@@ -314,6 +316,8 @@ function update(dt) {
   updateFootballer(dt);
   updateMechanics(dt);
   updateLegend(dt);
+  updateRumors(dt);
+  player.shirt = career.blessed ? SHIRT_AZZURRA : SHIRT_RED;
   if (shake) addShake(shake);
 
   const district = districtAt(Math.floor(player.x / TILE), Math.floor(player.y / TILE));
@@ -497,6 +501,22 @@ function updateLegend(dt) {
     legend.vanish > 0 ||
     inStadium(player.x, player.y) ||
     vespas.some((v) => !v.ridden && inStadium(v.x, v.y));
+}
+
+// From day 8 until the mission, people in the street talk about the Dio del Calcio coming back.
+const rumor = { wait: 8 };
+function updateRumors(dt) {
+  const { rumorsFrom, day } = RULES.legend;
+  if (career.legendFired || career.day < rumorsFrom || career.day > day || career.status === 'broke') return;
+  rumor.wait -= dt;
+  if (rumor.wait > 0) return;
+  rumor.wait = 12 + Math.random() * 18; // una voce ogni 12-30 secondi
+  const near = people.pedestrians.filter(
+    (p) => p.down <= 0 && !isTalking(p) && Math.hypot(p.x - player.x, p.y - player.y) < 260 && isVisible(p.x, p.y),
+  );
+  if (near.length)
+    say(near[Math.floor(Math.random() * near.length)], RUMORS[Math.floor(Math.random() * RUMORS.length)], 3.5);
+  else rumor.wait = 2; // nessuno vicino: riprova fra poco
 }
 
 const legendVisible = () => !!legend.order || legend.vanish > 0;

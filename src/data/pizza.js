@@ -81,6 +81,7 @@ export const RULES = Object.freeze({
     maxDistance: 60 * TILE, // px: abita (o si allena) non troppo lontano
     bonus: 0.2, // +20% su tutti i guadagni…
     bonusDays: 2, // …per i 2 giorni successivi (si accumula)
+    blessedTip: 10, // € in più da ogni calciatore, dopo aver servito il Dio del Calcio (per sempre)
   },
   tuning: {
     cost: 1000, // l'officina di Fuorigrotta
@@ -101,6 +102,7 @@ export const RULES = Object.freeze({
     time: 5 * 60,
     tip: 115, // mancia extra
     name: 'Il Dio del Calcio',
+    rumorsFrom: 8, // dal giorno 8 i passanti ne parlano
   },
 });
 

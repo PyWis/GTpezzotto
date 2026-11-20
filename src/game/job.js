@@ -13,7 +13,7 @@ import { showBanner, toast } from '../render/hud.js';
 import { STOP_COLOR } from '../render/delivery.js';
 import { Career, OrderKind, orderValue } from './career.js';
 import { findAddress } from './addresses.js';
-import { clearSave } from './save.js';
+import { clearSave, readBlessing, saveBlessing } from './save.js';
 
 export const PIZZERIA_RANGE = 44;
 
@@ -50,6 +50,7 @@ export const career = new Career({
   rules: RULES,
   findAddress,
   stadium: STADIUM_PITCH,
+  blessed: readBlessing(),
   onEvent: handleEvent,
 });
 
@@ -461,6 +462,19 @@ function handleEvent(e) {
         5,
       );
       break;
+    case 'blessed':
+      saveBlessing();
+      queueDialog({
+        title: 'MAGLIA AZZURRA',
+        color: LEGEND_COLOR,
+        body: html`<p>La maglia rossa di Gennaro è diventata <b>azzurra</b>.</p>
+          <p class="small">
+            Da oggi ogni calciatore che servi ti dà ${euro(RULES.footballer.blessedTip)} in più. Per sempre, anche nelle
+            partite nuove.
+          </p>`,
+        buttons: [{ label: 'Forza Napoli!', cancel: true, badge: '↵' }],
+      });
+      break;
     case 'repaired':
       sfx.coins();
       showBanner('Vespa riparata!', 3);
@@ -477,7 +491,13 @@ function handleEvent(e) {
       const { stop } = e;
       sfx.delivered();
       if (e.order.kind === OrderKind.FOOTBALLER) {
-        toast('Pizza consegnata al calciatore: offre la casa! «Grazie, guagliò!»', FOOTBALLER_COLOR, 4);
+        toast(
+          stop.tip
+            ? `«Tu si' chillo d' 'o Dio d' 'o Calcio!» Il calciatore ti dà ${euro(stop.tip)}`
+            : 'Pizza consegnata al calciatore: offre la casa! «Grazie, guagliò!»',
+          FOOTBALLER_COLOR,
+          4,
+        );
         break;
       }
       if (e.order.kind === OrderKind.LEGEND) {

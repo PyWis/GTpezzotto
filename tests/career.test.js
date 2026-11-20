@@ -13,7 +13,7 @@ function seeded(seed) {
   };
 }
 
-function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [] } = {}) {
+function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [], blessed = false } = {}) {
   const pizzerias = PIZZERIAS.map((p, i) => ({ ...p, pos: [i * 1000, 0] }));
   let n = 0;
   const findAddress = (r, avoid, options) => {
@@ -28,6 +28,7 @@ function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [] } = {}) {
     rules: { ...RULES, ...rules },
     findAddress,
     stadium: STADIUM,
+    blessed,
     rng,
     onEvent: (e) => events.push(e),
   });
@@ -521,4 +522,31 @@ test('salvataggio: la carriera si ricostruisce identica, ordini in corso compres
   for (const stop of order.stops) copy.update(1, at([stop.address.x, stop.address.y]));
   assert.equal(order.state, 'done');
   assert.equal(copy.ledger.orders.at(-1), order);
+});
+
+// ------------------------------------------------------------------ maglia azzurra
+
+test('servire il Dio del Calcio fa diventare Gennaro "benedetto"', () => {
+  const { career, events } = makeCareer({ rules: { livingCost: [0, 0], maxDaysInRed: 99 } });
+  assert.equal(career.blessed, false);
+  career.update(DAY10 + RULES.legend.after + 1, far);
+  const order = career.activeOrders.find((o) => o.kind === 'legend');
+  career.update(1, at(order.pizzeria.pos));
+  career.update(1, at([STADIUM.x, STADIUM.y]));
+  assert.equal(career.blessed, true);
+  assert.equal(ofType(events, 'blessed').length, 1);
+});
+
+test('da benedetto ogni calciatore dà 10€ in più (oltre al bonus), e vale anche in una partita nuova', () => {
+  for (const blessed of [false, true]) {
+    const rules = { ...RULES, footballer: { ...RULES.footballer, chance: 1 } };
+    const { career } = makeCareer({ rules, blessed });
+    const shop = hire(career);
+    career.update(0.1, at(shop.pos));
+    const [order] = career.activeOrders;
+    career.update(1, at([order.stops[0].address.x, order.stops[0].address.y]));
+    assert.equal(order.state, 'done');
+    assert.equal(order.pay.total, blessed ? 10 : 0);
+    assert.equal(career.payMultiplier, 1.2, 'il bonus normale resta');
+  }
 });

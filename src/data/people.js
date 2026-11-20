@@ -42,4 +42,14 @@ export const COMPLAINTS = [
   'Neh, ma sì scemo?',
   'Chiano chiano!',
 ];
+/** Dal giorno 8, per strada si sparge la voce. */
+export const RUMORS = [
+  "Sta venenno 'o Dio d''o Calcio!",
+  'Sta venendo il Dio del Calcio, hai sentito?',
+  "Aggio sentuto ca torna 'o Dio d''o Calcio...",
+  "Dicono ca 'o Dio d''o Calcio vò na pizza!",
+  "'O Dio d''o Calcio sta venenno 'o stadio!",
+  "Mio cugino l'ha visto: torna 'o Dio d''o Calcio!",
+];
+
 export const HORN_REPLIES = ['Uè!', 'Eh!', 'Ma che vuò?', 'Pìììì!', 'Uè uè!'];

@@ -41,7 +41,9 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
   quello di Gianturco giura di fare solo cose pulite e che l'altro prima o poi ti fa finire a **Poggioreale** (c'è il
   carcere, in fondo a Via Poggioreale); quello di Fuorigrotta dice che a dare retta a Gianturco i napoletani mangiano le
   pizze fredde.
-- **???**: c'è una missione segreta. Si sa solo che arriva una volta sola, e che c'entra lo stadio.
+- **???**: c'è una missione segreta. Si sa solo che arriva una volta sola, che c'entra lo stadio e che dal giorno 8 per
+  strada se ne parla. Chi la porta a termine si toglie la maglia rossa e indossa quella **azzurra**: da quel momento ogni
+  calciatore gli lascia **10 €** in più, **per sempre** (il vantaggio resta anche iniziando una nuova partita).
 
 ### Salvataggio e pausa
 

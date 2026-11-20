@@ -10,6 +10,9 @@ export const MOUNT_RANGE = 42;
 const WALK_SPEED = 78;
 const RUN_SPEED = 140;
 
+export const SHIRT_RED = '#c8262b';
+export const SHIRT_AZZURRA = '#1d9be0';
+
 /** Gennaro. `mode` is one of: foot, vespa, funicular, metro. */
 export const player = {
   name: 'Gennaro',
@@ -20,7 +23,7 @@ export const player = {
   vespa: null,
   walk: 0,
   moving: false,
-  shirt: '#6cb4ee',
+  shirt: SHIRT_RED, // diventa azzurra dopo aver servito il Dio del Calcio
   hair: '#1d140e',
   skin: '#e8b994',
   say: '',

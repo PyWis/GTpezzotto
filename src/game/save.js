@@ -5,6 +5,8 @@ import { mount, player } from '../entities/player.js';
 import { vespas } from '../entities/vespas.js';
 
 const KEY = 'napule.save.v1';
+/** Kept apart from the saved game: a new game doesn't take it away. */
+const BLESSING_KEY = 'napule.dio-del-calcio.v1';
 const VERSION = 1;
 
 /** Saves now. Skipped while riding the metro or a funicular (Gennaro is between two stations). */
@@ -33,6 +35,23 @@ export function readSave() {
     return data?.version === VERSION && data.career ? data : null;
   } catch {
     return null;
+  }
+}
+
+/** Has Gennaro ever served the Dio del Calcio, in any game? */
+export function readBlessing() {
+  try {
+    return localStorage.getItem(BLESSING_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export function saveBlessing() {
+  try {
+    localStorage.setItem(BLESSING_KEY, '1');
+  } catch {
+    // senza localStorage vale solo per questa partita
   }
 }
 

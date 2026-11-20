@@ -55,10 +55,13 @@ export class Career {
     rules,
     findAddress,
     stadium = null,
+    blessed = false,
     rng = Math.random,
     onEvent = () => {},
   }) {
     Object.assign(this, { pizzerias, menu, surnames, rules, findAddress, stadium, rng, onEvent });
+    // Benedetto dal Dio del Calcio: ogni calciatore dà una mancia. Vale per sempre, anche nelle partite nuove.
+    this.blessed = blessed;
     this.time = 0; // secondi di gioco dall'inizio
     this.status = 'unemployed'; // unemployed | employed | broke
     this.employer = null;
@@ -360,11 +363,17 @@ export class Career {
     stop.deliveredAt = this.time;
     if (order.kind === OrderKind.LEGEND) {
       stop.tip = this.rules.legend.tip; // il Dio del Calcio lascia sempre la sua mancia
+    } else if (order.kind === OrderKind.FOOTBALLER) {
+      stop.tip = this.blessed ? this.rules.footballer.blessedTip : 0;
     } else if (this.tipTimeLeft(order) > 0) {
       stop.tip = round2(orderValue(stop) * randRange(...this.rules.tipRange, this.rng));
     }
     order.legStart = this.time; // la mancia si calcola su ogni singola consegna
     this.emit('delivered', { order, stop });
+    if (order.kind === OrderKind.LEGEND && !this.blessed) {
+      this.blessed = true;
+      this.emit('blessed', {});
+    }
     if (order.stops.every((x) => x.delivered)) this.closeOrder(order);
   }
 
