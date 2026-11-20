@@ -30,8 +30,9 @@ export const career = new Career({
 // ---------------------------------------------------------------------------
 const STANDING_LOOK = {
   employer: { color: '#ffd23f', tag: 'IL TUO LAVORO' },
-  hiring: { color: '#39d46a', tag: 'CERCASI FATTORINO' },
-  notHiring: { color: '#9a8f7a', tag: '' },
+  unknown: { color: '#d9c9a8', tag: '' }, // chissà: bisogna entrare e chiedere
+  hiring: { color: '#39d46a', tag: 'CERCANO UN FATTORINO' },
+  notHiring: { color: '#9a8f7a', tag: 'OGGI NON ASSUMONO' },
   busy: { color: '#9a8f7a', tag: '' },
   banned: { color: '#e0412f', tag: 'NON TI VOGLIONO' },
 };
@@ -49,18 +50,20 @@ export const pendingStops = () =>
 
 export const pizzasOnBoard = () => pendingStops().reduce((n, { stop }) => n + stop.pizzas.length, 0);
 
-/** Where to go now: the pizzeria (to pick up or start the shift) or the nearest door. */
+/** Pizzerias worth visiting while job hunting: not yet asked, or known to be hiring. */
+const worthAsking = (p) => ['unknown', 'hiring'].includes(career.standingWith(p.id));
+
+/** Employed and with pizzas waiting at the counter (or nothing to do: go back for the next order). */
+const needsShop = () =>
+  career.status === 'employed' && (!pendingStops().length || career.activeOrders.some((o) => !o.pickedUp));
+
+/** Where to go now: the nearest customer door, the pizzeria, or the next pizzeria to ask for a job. */
 export function currentObjective(player) {
-  const shop = career.employer && career.pizzeria(career.employer);
-  const needsShop =
-    shop && (!career.onShift ? career.status === 'employed' : career.activeOrders.some((o) => !o.pickedUp));
   const targets = pendingStops().map(({ stop }) => ({ x: stop.address.x, y: stop.address.y, color: STOP_COLOR }));
-  if (needsShop) targets.push({ x: shop.pos[0], y: shop.pos[1], color: '#ffffff' });
+  const shop = career.job?.pizzeria;
+  if (shop && needsShop()) targets.push({ x: shop.pos[0], y: shop.pos[1], color: '#ffffff' });
   if (career.status === 'unemployed')
-    for (const id of career.openings) {
-      const p = career.pizzeria(id);
-      targets.push({ x: p.pos[0], y: p.pos[1], color: '#39d46a' });
-    }
+    for (const p of PIZZERIAS.filter(worthAsking)) targets.push({ x: p.pos[0], y: p.pos[1], color: '#ffd23f' });
   let best = null;
   let bestD = Infinity;
   for (const t of targets) {
@@ -74,9 +77,7 @@ export function currentObjective(player) {
 export function jobMarkers(t) {
   const markers = PIZZERIAS.map((p) => {
     const standing = career.standingWith(p.id);
-    const wanted =
-      standing === 'hiring' ||
-      (standing === 'employer' && (!career.onShift || career.activeOrders.some((o) => !o.pickedUp)));
+    const wanted = (career.status === 'unemployed' && worthAsking(p)) || (standing === 'employer' && needsShop());
     return {
       kind: 'pizzeria',
       x: p.pos[0],
@@ -114,18 +115,18 @@ const menuTable = () =>
 
 const rulesText = () =>
   html`<p class="small">
-    Ogni ${clock(RULES.orderInterval)} parte un ordine da 3 a 7 pizze per tre famiglie: hai ${clock(RULES.orderTime)}
-    per ritirarle qui e consegnarle. Paga: ${euro(RULES.basePay)} a consegna + ${RULES.commission * 100}% del valore
-    consegnato + mance (5-20%) se consegni entro il primo minuto. Ogni pizza persa: 1% di rischio licenziamento.
+    Ogni ${clock(RULES.orderInterval)} parte un ordine da 3 a 7 pizze per tre famiglie (se torni qui a mani vuote prima,
+    ne arriva uno in pochi secondi): hai ${clock(RULES.orderTime)} per ritirarle e consegnarle. Paga:
+    ${euro(RULES.basePay)} a consegna se servi almeno una famiglia + ${RULES.commission * 100}% del valore consegnato +
+    mance (5-20%) entro il primo minuto. Ogni pizza persa: 1% di rischio licenziamento.
   </p>`;
 
 export function openPizzeria(p) {
-  const standing = career.standingWith(p.id);
   const close = { label: 'Arrivederci', cancel: true };
   const show = (body, buttons) =>
     showDialog({ title: p.name.toUpperCase(), color: p.color, body, buttons: [...buttons, close] });
 
-  switch (standing) {
+  switch (career.ask(p.id)) {
     case 'hiring':
       return show(
         html`<p>«Guagliò, ci serve proprio un fattorino!»</p>
@@ -135,15 +136,18 @@ export function openPizzeria(p) {
     case 'notHiring':
       return show(
         html`<p>«Mi dispiace, pe' mo' nun cercammo a nisciuno.»</p>
-          <p class="small">Oggi assumono: ${career.openings.map((id) => career.pizzeria(id).name).join(' e ')}.</p>`,
+          <p class="small">Prova nelle altre pizzerie, o ripassa domani.</p>`,
         [],
       );
     case 'busy':
       return show(html`<p>«Ma tu nun faje già 'e cunsegne p' ${career.pizzeria(career.employer).name}?»</p>`, []);
     case 'banned':
       return show(
-        html`<p>«Tu? Ccà nun ce mettere cchiù pede!»</p>
-          <p class="small">Chi lascia (o perde) il lavoro qui non viene più riassunto.</p>`,
+        html`<p>«Tu? Ccà nun ce mettere pede, almeno pe' nu poco!»</p>
+          <p class="small">
+            Chi lascia (o perde) il lavoro qui deve aspettare ${RULES.rehireAfterDays} giorni prima di poter essere
+            forse riassunto.
+          </p>`,
         [],
       );
     case 'employer': {
@@ -153,29 +157,27 @@ export function openPizzeria(p) {
           showDialog({
             title: 'SEI SICURO?',
             color: '#e0412f',
-            body: html`<p>Se te ne vai, ${p.name} non ti riprenderà mai più.</p>`,
+            body: html`<p>
+              Se te ne vai, ${p.name} non ti riprenderà per almeno ${RULES.rehireAfterDays} giorni. Le pizze che stai
+              portando andranno perse.
+            </p>`,
             buttons: [
               { label: 'Sì, me ne vado', run: () => career.quit() },
               { label: 'No, resto', cancel: true },
             ],
           }),
       };
-      if (career.onShift) {
-        const waiting = career.activeOrders.filter((o) => !o.pickedUp).length;
-        return show(
-          html`<p>«Jamme, Gennà, 'e pizze se fanno fredde!»</p>
-            <p class="small">
-              ${waiting
-                ? `Hai ${plural(waiting, 'ordine', 'ordini')} da ritirare: le pizze si caricano da sole quando passi davanti alla porta.`
-                : 'Tutti gli ordini sono in consegna.'}
-            </p>`,
-          [quit],
-        );
-      }
+      const waiting = career.activeOrders.filter((o) => !o.pickedUp).length;
+      const next = career.nextOrderIn;
+      const status = waiting
+        ? `Hai ${plural(waiting, 'ordine', 'ordini')} da ritirare: le pizze si caricano da sole quando passi davanti alla porta.`
+        : career.activeOrders.length
+          ? 'Tutti gli ordini sono in consegna.'
+          : `Il prossimo ordine arriva tra ${clock(next)}.`;
       return show(
-        html`<p>«Buongiorno Gennà! Sei pronto?»</p>
-          ${raw(rulesText())}`,
-        [{ label: `Inizia il turno (giorno ${career.day + 1})`, run: () => career.startShift() }, quit],
+        html`<p>«Jamme, Gennà, 'e pizze se fanno fredde!»</p>
+          <p class="small">${status}</p>`,
+        [quit],
       );
     }
   }
@@ -184,60 +186,65 @@ export function openPizzeria(p) {
 // ---------------------------------------------------------------------------
 // Career events → feedback
 // ---------------------------------------------------------------------------
-function shiftReport({ shift, reason, total }) {
-  const rows = shift.orders
-    .map((o) => {
-      const state = o.state === 'done' ? 'OK' : `-${o.missed}`;
-      return html`<tr>
-        <td>#${o.number}</td>
-        <td>${o.pizzaCount} pizze</td>
-        <td>${state}</td>
-        <td>${euro(o.pay?.total ?? 0)}</td>
-      </tr>`;
-    })
+const orderRows = (orders) =>
+  orders
+    .map(
+      (o) =>
+        html`<tr>
+          <td>#${o.number}</td>
+          <td>${o.pizzaCount} pizze</td>
+          <td>${o.state === 'done' ? 'OK' : `-${o.missed}`}</td>
+          <td>${euro(o.pay.total)}</td>
+        </tr>`,
+    )
     .join('');
-  const title = { end: `FINE GIORNO ${shift.day}`, fired: 'SEI LICENZIATO!', quit: 'TI SEI LICENZIATO' }[reason];
-  const intro = {
-    end: '«Bravo Gennà, per oggi abbiamo finito.»',
-    fired: `«Troppe pizze perse! Vattenne e nun turnà cchiù.» — ${shift.pizzeria.name}`,
-    quit: `Hai lasciato ${shift.pizzeria.name}.`,
-  }[reason];
-  const after =
-    reason === 'end'
-      ? 'Torna in pizzeria quando vuoi iniziare il prossimo giorno.'
-      : career.status === 'unemployable'
-        ? ''
-        : `Ora sei disoccupato. Assumono: ${career.openings.map((id) => career.pizzeria(id).name).join(' e ')}.`;
+
+const row = (label, value, cls = '') =>
+  html`<tr class="${cls}">
+    <td>${label}</td>
+    <td>${value}</td>
+  </tr>`;
+
+function dayReport({ ledger, earned, living, wallet, daysInRed }) {
+  const { pay } = ledger;
+  const paid = ledger.orders.filter((o) => o.pay.base).length;
+  const warning =
+    daysInRed === 0
+      ? ''
+      : daysInRed >= RULES.maxDaysInRed
+        ? 'Sei rimasto senza soldi per troppo tempo.'
+        : `Sei in rosso da ${plural(daysInRed, 'giorno', 'giorni')}: al ${RULES.maxDaysInRed}° è game over!`;
+  const job =
+    career.status === 'employed'
+      ? `Domani si lavora ancora da ${career.job.pizzeria.name}.`
+      : 'Domani alcune pizzerie potrebbero cercare un fattorino: fai il giro!';
   queueDialog({
-    title,
-    color: reason === 'end' ? '#ffd23f' : '#e0412f',
-    body: html`<p>${intro}</p>
-      <table class="report">
-        ${raw(rows)}
-      </table>
+    title: `FINE GIORNO ${ledger.day}`,
+    color: daysInRed ? '#e0412f' : '#ffd23f',
+    body: html`${raw(ledger.orders.length ? `<table class="report">${orderRows(ledger.orders)}</table>` : '')}
       <table class="menu">
-        <tr>
-          <td>Fisso (${shift.orders.length} × ${euro(RULES.basePay)})</td>
-          <td>${euro(shift.pay.base)}</td>
-        </tr>
-        <tr>
-          <td>Percentuale ${RULES.commission * 100}%</td>
-          <td>${euro(shift.pay.commission)}</td>
-        </tr>
-        <tr>
-          <td>Mance</td>
-          <td>${euro(shift.pay.tips)}</td>
-        </tr>
-        <tr class="total">
-          <td>Totale giornata</td>
-          <td>${euro(total)}</td>
-        </tr>
-        <tr>
-          <td>Nel portafoglio</td>
-          <td>${euro(career.wallet)}</td>
-        </tr>
+        ${raw(row(`Fisso (${paid} × ${euro(RULES.basePay)})`, euro(pay.base)))}
+        ${raw(row(`Percentuale ${RULES.commission * 100}%`, euro(pay.commission)))} ${raw(row('Mance', euro(pay.tips)))}
+        ${raw(row('Guadagno della giornata', euro(earned), 'total'))} ${raw(row('Spese per vivere', euro(-living)))}
+        ${raw(row('Nel portafoglio', euro(wallet), 'total'))}
       </table>
-      <p class="small">${after}</p>`,
+      ${raw(warning ? html`<p class="warn">${warning}</p>` : '')}
+      ${raw(career.status === 'broke' ? '' : html`<p class="small">${job}</p>`)}`,
+    buttons: [{ label: 'Continua', cancel: true, badge: '↵' }],
+  });
+}
+
+function leftJobDialog({ type, pizzeria, rehireDay }) {
+  queueDialog({
+    title: type === 'fired' ? 'SEI LICENZIATO!' : 'TI SEI LICENZIATO',
+    color: '#e0412f',
+    body: html`<p>
+        ${type === 'fired' ? `«Troppe pizze perse! Vattenne.» — ${pizzeria.name}` : `Hai lasciato ${pizzeria.name}.`}
+      </p>
+      <p class="small">
+        Non ti riprenderanno prima del giorno ${rehireDay}. Ora sei disoccupato: fai il giro delle pizzerie per sapere
+        chi cerca un fattorino.
+      </p>`,
     buttons: [{ label: 'Continua', cancel: true, badge: '↵' }],
   });
 }
@@ -247,10 +254,7 @@ function handleEvent(e) {
     case 'hired':
       sfx.coins();
       showBanner('Assunto!');
-      toast(`Assunto da ${e.pizzeria.name}! Premi E per iniziare`, '#39d46a', 5);
-      break;
-    case 'shiftStarted':
-      showBanner(`Giorno ${e.shift.day}`);
+      toast(`Assunto da ${e.pizzeria.name}! Arriva il primo ordine`, '#39d46a', 5);
       break;
     case 'orderCreated': {
       const o = e.order;
@@ -262,6 +266,9 @@ function handleEvent(e) {
       );
       break;
     }
+    case 'earlyOrder':
+      toast(`Sei tornato presto: nuovo ordine tra ${Math.ceil(e.in)} secondi`, '#fff', 4);
+      break;
     case 'pickedUp':
       sfx.pickup();
       toast(`Ordine #${e.order.number} caricato: ${e.order.stops.map((s) => s.family).join(', ')}`, '#fff', 4);
@@ -284,16 +291,24 @@ function handleEvent(e) {
       break;
     case 'fired':
       sfx.fired();
+      leftJobDialog(e);
       break;
-    case 'shiftEnded':
-      shiftReport(e);
+    case 'quit':
+      leftJobDialog(e);
+      break;
+    case 'dayEnded':
+      showBanner(`Giorno ${e.ledger.day + 1}`);
+      dayReport(e);
       break;
     case 'gameOver':
+      sfx.fired();
       queueDialog({
         title: "NAPULE NUN TE VO' CCHIÙ",
         color: '#e0412f',
-        body: html`<p>Nessuna delle cinque pizzerie ti assume più.</p>
-          <p>Hai guadagnato in tutto ${euro(career.wallet)}.</p>`,
+        body: html`<p>
+            Gennaro è rimasto in rosso per ${RULES.maxDaysInRed} giorni di fila e non ce la fa più a vivere.
+          </p>
+          <p>Hai resistito ${plural(career.day - 1, 'giorno', 'giorni')}.</p>`,
         buttons: [{ label: 'Ricomincia', run: () => location.reload() }],
         dismissable: false,
       });

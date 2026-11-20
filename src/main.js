@@ -334,7 +334,7 @@ function promptText() {
 function hintText() {
   if (!game.started) return null;
   if (career.status === 'unemployed' && game.hintTime <= 0)
-    return 'Segui la freccia verde: una pizzeria cerca un fattorino';
+    return 'Segui la freccia: chiedi lavoro alle pizzerie, chissà chi assume';
   if (career.status === 'unemployed' && game.hintTime > 0 && player.mode === 'foot')
     return 'Sali sulla Vespa qui accanto (E) e cerca lavoro in pizzeria';
   return null;
