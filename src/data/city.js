@@ -76,7 +76,7 @@ export const ROADS = [
   road("Via Cavalleggeri d'Aosta", 'street', 2, [[24, 62], [52, 62]]),
   road('Via Nuova Agnano', 'street', 2, [[-30, 48], [24, 48]]),
   road('Via Bagnoli', 'street', 2, [[24, 74], [52, 74]]),
-  road('Via Nisida', 'street', 2, [[85, 100], [81, 101.5], [77, 104]]),
+  road('Via Nisida', 'street', 2, [[20, 88], [20, 104]]),
   road('Via Taddeo da Sessa', 'main', 3, [[298, 18], [384, 18]]),
   road('Via Gianturco', 'main', 3, [[298, 40], [384, 40]]),
   road('Via Galileo Ferraris', 'main', 3, [[298, 66], [384, 66]]),
@@ -92,7 +92,7 @@ export const PARKINGS = [
   { name: 'Parcheggio Borgo Marinari', rect: [168, 96, 174, 99] },
   { name: 'Parcheggio Cilea', rect: [104, 50, 109, 54] },
   { name: 'Parcheggio Belvedere', rect: [104, 36, 109, 40] },
-  { name: 'Parcheggio di Nisida', rect: [73, 104, 78, 107] },
+  { name: 'Parcheggio di Nisida', rect: [17, 104, 23, 107] },
 ];
 
 export const PLAZAS = [
@@ -124,7 +124,7 @@ export const QUAYS = [
   { name: 'Porto', rect: [228, 82, 235, 96] },
   { name: 'Porticciolo di Mergellina', rect: [112, 92, 117, 99] },
   { name: 'Borgo Marinari', rect: [161, 96, 174, 107] },
-  { name: 'Pontile Nord', rect: [6, 96, 9, 109] },
+  { name: 'Pontile Nord', rect: [5, 96, 8, 109] },
   { name: 'Darsena di San Giovanni', rect: [306, 88, 312, 98] },
   { name: 'Darsena Petroli', rect: [318, 90, 324, 98] },
 ];
@@ -217,7 +217,7 @@ export const METRO_LINES = [
 /** Colline e montagne: la collina di Posillipo/Vomero, il Vesuvio e Nisida. */
 export const HILL = { x0: 86, x1: 104, y0: 24 };
 export const VESUVIUS = { center: [342, 101], radius: 12 }; // a est, oltre San Giovanni a Teduccio
-export const NISIDA = { center: [75, 106.5], radius: 4 }; // l'isolotto davanti a Coroglio
+export const NISIDA = { center: [20, 107], radius: 4 }; // l'isolotto a est del Pontile Nord
 /** Le spiagge: sabbia fra la strada e il mare. */
 export const BEACHES = [{ name: 'Spiaggia di Bagnoli', rect: [2, 88, 44, 101] }];
 export const BROWNFIELDS = [[2, 60, 22, 84]];
