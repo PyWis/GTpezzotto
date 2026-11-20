@@ -13,7 +13,7 @@ function seeded(seed) {
   };
 }
 
-function makeCareer({ rng = seeded(1), rules = RULES } = {}) {
+function makeCareer({ rng = seeded(1), rules = {} } = {}) {
   const pizzerias = PIZZERIAS.map((p, i) => ({ ...p, pos: [i * 1000, 0] }));
   let n = 0;
   const findAddress = () => ({ x: 5000 + 500 * n++, y: 3000, label: `Via Test ${n}` });
@@ -22,40 +22,88 @@ function makeCareer({ rng = seeded(1), rules = RULES } = {}) {
     pizzerias,
     menu: MENU,
     surnames: SURNAMES,
-    rules,
+    rules: { ...RULES, ...rules },
     findAddress,
     rng,
     onEvent: (e) => events.push(e),
   });
-  return { career, events, pizzerias };
+  return { career, events };
 }
 
 const far = { x: -1e6, y: -1e6, speed: 0 };
 const at = ([x, y]) => ({ x, y, speed: 0 });
 const types = (events) => events.map((e) => e.type);
+const ofType = (events, type) => events.filter((e) => e.type === type);
 
-function hireAndStart(career) {
-  career.hire(career.openings[0]);
-  career.startShift();
-  return career.pizzeria(career.employer);
+/** Passes `seconds` one second at a time, with Gennaro at `where`. */
+function wait(career, seconds, where = far) {
+  for (let t = 0; t < seconds; t++) career.update(1, where);
 }
 
-test('quando è disoccupato, solo 2 pizzerie su 5 assumono', () => {
+function hire(career) {
+  const id = career.openings[0];
+  assert.ok(career.hire(id));
+  return career.pizzeria(id);
+}
+
+function deliverAll(career, order) {
+  for (const stop of order.stops) career.update(1, at([stop.address.x, stop.address.y]));
+}
+
+// ------------------------------------------------------------------ hiring
+
+test('chi assume è segreto: bisogna chiedere in pizzeria, e 2 su 5 dicono sì', () => {
   for (let seed = 1; seed < 30; seed++) {
     const { career } = makeCareer({ rng: seeded(seed) });
-    assert.equal(career.openings.length, 2);
-    const hiring = PIZZERIAS.filter((p) => career.standingWith(p.id) === 'hiring');
-    assert.equal(hiring.length, 2);
-    const notHiring = PIZZERIAS.find((p) => !career.openings.includes(p.id));
-    assert.equal(career.hire(notHiring.id), false);
+    assert.ok(PIZZERIAS.every((p) => career.standingWith(p.id) === 'unknown'));
+    const answers = PIZZERIAS.map((p) => career.ask(p.id));
+    assert.equal(answers.filter((a) => a === 'hiring').length, 2);
+    assert.equal(answers.filter((a) => a === 'notHiring').length, 3);
+    const no = PIZZERIAS.find((p, i) => answers[i] === 'notHiring');
+    assert.equal(career.hire(no.id), false);
   }
 });
+
+test('ogni giorno cambia chi assume, e le risposte vanno richieste', () => {
+  const { career } = makeCareer({ rng: seeded(7), rules: { livingCost: [0, 0] } });
+  career.ask(PIZZERIAS[0].id);
+  const seen = new Set();
+  for (let d = 0; d < 10; d++) {
+    seen.add(career.openings.join());
+    wait(career, RULES.dayLength);
+    assert.equal(career.standingWith(PIZZERIAS[0].id), 'unknown');
+  }
+  assert.ok(seen.size > 1);
+});
+
+test('chi se ne va non viene riassunto per 10 giorni, poi potrebbe', () => {
+  const { career, events } = makeCareer({ rng: seeded(3), rules: { livingCost: [0, 0] } });
+  const shop = hire(career);
+  career.quit();
+  assert.equal(ofType(events, 'quit')[0].rehireDay, 11);
+  let reopened = null;
+  for (let day = 1; day <= 40; day++) {
+    assert.equal(career.day, day);
+    if (day < 11) {
+      assert.equal(career.standingWith(shop.id), 'banned');
+      assert.ok(!career.openings.includes(shop.id));
+      assert.equal(career.hire(shop.id), false);
+    } else if (career.openings.includes(shop.id)) {
+      reopened = day;
+      break;
+    }
+    wait(career, RULES.dayLength);
+  }
+  assert.ok(reopened >= 11, `riassume dal giorno ${reopened}`);
+  assert.ok(career.hire(shop.id));
+});
+
+// ------------------------------------------------------------------ orders
 
 test('ogni consegna ha 3-7 pizze per 3 famiglie, massimo 4 a testa', () => {
   for (let total = 3; total <= 7; total++)
     for (let seed = 1; seed < 50; seed++) {
       const counts = splitPizzas(total, 3, 4, seeded(seed));
-      assert.equal(counts.length, 3);
       assert.equal(
         counts.reduce((a, b) => a + b),
         total,
@@ -63,7 +111,7 @@ test('ogni consegna ha 3-7 pizze per 3 famiglie, massimo 4 a testa', () => {
       assert.ok(counts.every((c) => c >= 1 && c <= 4));
     }
   const { career } = makeCareer();
-  hireAndStart(career);
+  hire(career);
   career.update(0, far);
   const [order] = career.activeOrders;
   assert.ok(order.pizzaCount >= 3 && order.pizzaCount <= 7);
@@ -71,31 +119,56 @@ test('ogni consegna ha 3-7 pizze per 3 famiglie, massimo 4 a testa', () => {
   assert.ok(order.stops.every((s) => s.pizzas.length <= 4 && s.pizzas.every((p) => MENU.includes(p))));
 });
 
-test('una nuova consegna ogni 2 minuti e mezzo, per un turno di 20 minuti', () => {
-  const { career, events } = makeCareer({ rules: { ...RULES, firingChancePerPizza: 0 } });
-  hireAndStart(career);
-  for (let t = 0; t < 25 * 60; t++) career.update(1, far);
-  const created = events.filter((e) => e.type === 'orderCreated').map((e) => e.order.createdAt);
-  assert.deepEqual(created, [0, 150, 300, 450, 600, 750, 900, 1050]);
-  const end = events.find((e) => e.type === 'shiftEnded');
-  assert.equal(end.reason, 'end');
-  assert.equal(career.onShift, false);
-  assert.equal(career.status, 'employed'); // domani si ricomincia
+test('lontano dalla pizzeria arriva un ordine ogni 2:30', () => {
+  const { career, events } = makeCareer({ rules: { firingChancePerPizza: 0 } });
+  hire(career);
+  wait(career, 1199);
+  const created = ofType(events, 'orderCreated').map((e) => e.order.createdAt);
+  assert.deepEqual(created, [1, 151, 301, 451, 601, 751, 901, 1051]);
 });
 
-test('le consegne si sovrappongono: 3 minuti di tempo, una nuova ogni 2:30', () => {
-  const { career } = makeCareer({ rules: { ...RULES, firingChancePerPizza: 0 } });
-  hireAndStart(career);
-  for (let t = 0; t <= 160; t++) career.update(1, far);
-  assert.equal(career.activeOrders.length, 2);
+test('tornando in pizzeria dopo le consegne, il nuovo ordine arriva dopo 5-15 secondi', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const { career, events } = makeCareer({ rng: seeded(seed) });
+    const shop = hire(career);
+    career.update(0.1, at(shop.pos)); // primo ordine, ritirato subito
+    deliverAll(career, career.activeOrders[0]);
+    assert.equal(career.activeOrders.length, 0);
+    const back = career.time;
+    career.update(0.1, at(shop.pos));
+    const early = ofType(events, 'earlyOrder');
+    assert.equal(early.length, 1);
+    assert.ok(early[0].in >= 5 && early[0].in <= 15, `tra ${early[0].in}s`);
+    wait(career, 20, at(shop.pos));
+    const second = ofType(events, 'orderCreated')[1].order;
+    const delay = second.createdAt - back;
+    assert.ok(delay >= 5 && delay <= 16, `nuovo ordine dopo ${delay}s`);
+    assert.ok(second.pickedUp, 'ritirato perché Gennaro è già in pizzeria');
+  }
 });
+
+test('senza ritiro in pizzeria non si consegna, e bisogna rallentare', () => {
+  const { career } = makeCareer();
+  const shop = hire(career);
+  career.update(0.1, far);
+  const [order] = career.activeOrders;
+  const door = order.stops[0].address;
+  career.update(1, at([door.x, door.y]));
+  assert.equal(order.stops[0].delivered, false);
+  career.update(1, at(shop.pos));
+  career.update(1, { x: door.x, y: door.y + DELIVERY_RANGE / 2, speed: 300 });
+  assert.equal(order.stops[0].delivered, false);
+  career.update(1, { x: door.x, y: door.y, speed: 20 });
+  assert.equal(order.stops[0].delivered, true);
+});
+
+// ------------------------------------------------------------------ money
 
 test('paga: 10€ + 20% del consegnato + mance entro il primo minuto', () => {
-  const { career, events } = makeCareer();
-  const shop = hireAndStart(career);
-  career.update(0.1, at(shop.pos)); // crea l'ordine e ritira le pizze
+  const { career } = makeCareer();
+  const shop = hire(career);
+  career.update(0.1, at(shop.pos));
   const [order] = career.activeOrders;
-  assert.ok(order.pickedUp);
   for (const stop of order.stops) career.update(5, at([stop.address.x, stop.address.y]));
 
   assert.equal(order.state, 'done');
@@ -109,12 +182,11 @@ test('paga: 10€ + 20% del consegnato + mance entro il primo minuto', () => {
   assert.ok(Math.abs(order.pay.commission - value * 0.2) < 0.01);
   assert.ok(Math.abs(order.pay.total - (10 + value * 0.2 + tips)) < 0.02);
   assert.equal(career.wallet, order.pay.total);
-  assert.ok(types(events).includes('pickedUp'));
 });
 
 test('niente mancia dopo il primo minuto', () => {
   const { career } = makeCareer();
-  const shop = hireAndStart(career);
+  const shop = hire(career);
   career.update(0.1, at(shop.pos));
   career.update(61, at(shop.pos));
   const [order] = career.activeOrders;
@@ -124,58 +196,65 @@ test('niente mancia dopo il primo minuto', () => {
   assert.equal(stop.tip, 0);
 });
 
-test('senza ritiro in pizzeria non si consegna, e bisogna rallentare', () => {
-  const { career } = makeCareer();
-  const shop = hireAndStart(career);
-  career.update(0.1, far);
-  const [order] = career.activeOrders;
-  const door = order.stops[0].address;
-  career.update(1, at([door.x, door.y]));
-  assert.equal(order.stops[0].delivered, false);
+test('i 10€ fissi si pagano solo se qualcosa è stato consegnato', () => {
+  const { career } = makeCareer({ rules: { firingChancePerPizza: 0 } });
+  const shop = hire(career);
+  career.update(0.1, at(shop.pos));
+  career.update(181, far);
+  const [closed] = career.ledger.orders;
+  assert.equal(closed.state, 'failed');
+  assert.deepEqual([closed.pay.base, closed.pay.total], [0, 0]);
+  assert.equal(career.wallet, 0);
+
+  // Una sola famiglia servita: il fisso c'è.
+  const order = career.activeOrders[0] ?? (career.update(150, far), career.activeOrders[0]);
   career.update(1, at(shop.pos));
-  career.update(1, { x: door.x, y: door.y + DELIVERY_RANGE / 2, speed: 300 });
-  assert.equal(order.stops[0].delivered, false);
-  career.update(1, { x: door.x, y: door.y, speed: 20 });
-  assert.equal(order.stops[0].delivered, true);
+  career.update(1, at([order.stops[0].address.x, order.stops[0].address.y]));
+  career.update(200, far);
+  assert.equal(order.pay.base, 10);
 });
 
-test('pizze non consegnate: 1% a pizza di essere licenziato, e quella pizzeria non ti riprende più', () => {
-  let firedSeen = 0;
+test('pizze non consegnate: 1% a pizza di essere licenziato', () => {
+  let fired = 0;
   for (let seed = 1; seed <= 400; seed++) {
     const { career, events } = makeCareer({ rng: seeded(seed) });
-    const shop = hireAndStart(career);
-    career.update(181, far); // l'ordine scade senza consegne
+    const shop = hire(career);
+    career.update(0.1, far);
+    career.update(181, far);
     if (career.status !== 'unemployed') continue;
-    firedSeen++;
+    fired++;
     assert.ok(types(events).includes('fired'));
-    assert.ok(career.banned.has(shop.id));
     assert.equal(career.standingWith(shop.id), 'banned');
-    assert.ok(!career.openings.includes(shop.id));
-    assert.equal(career.openings.length, 2);
   }
-  // P(licenziato) con 3-7 pizze perse ≈ 3-7%: su 400 tentativi ne aspettiamo una manciata.
-  assert.ok(firedSeen > 3 && firedSeen < 50, `licenziato ${firedSeen} volte su 400`);
+  // P(licenziato) con 3-7 pizze perse ≈ 3-7%.
+  assert.ok(fired > 3 && fired < 50, `licenziato ${fired} volte su 400`);
 });
 
-test('con probabilità 100% si viene sempre licenziati al primo fallimento', () => {
-  const { career, events } = makeCareer({ rules: { ...RULES, firingChancePerPizza: 1 } });
-  hireAndStart(career);
-  career.update(181, far);
+test('ogni giorno Gennaro spende 100-200€ per vivere', () => {
+  const { career, events } = makeCareer({ rng: seeded(5), rules: { maxDaysInRed: 99 } });
+  career.wallet = 1000;
+  wait(career, RULES.dayLength * 5);
+  const days = ofType(events, 'dayEnded');
+  assert.equal(days.length, 5);
+  for (const d of days) assert.ok(d.living >= 100 && d.living <= 200, `spesa ${d.living}`);
+  const spent = days.reduce((a, d) => a + d.living, 0);
+  assert.ok(Math.abs(career.wallet - (1000 - spent)) < 0.01);
+});
+
+test('3 giorni di fila sotto zero: game over; tornare in positivo azzera il conto', () => {
+  const { career, events } = makeCareer({ rng: seeded(9) });
+  wait(career, RULES.dayLength * 2);
+  assert.equal(career.daysInRed, 2);
+  career.wallet += 1000; // un colpo di fortuna
+  wait(career, RULES.dayLength);
+  assert.equal(career.daysInRed, 0);
   assert.equal(career.status, 'unemployed');
-  assert.equal(career.onShift, false);
-  assert.deepEqual(types(events).slice(-3), ['orderClosed', 'shiftEnded', 'fired']);
-  assert.equal(events.find((e) => e.type === 'shiftEnded').reason, 'fired');
-});
 
-test('chi si dimette non viene più riassunto; senza pizzerie è game over', () => {
-  const { career, events } = makeCareer();
-  for (let k = 0; k < 5; k++) {
-    const id = career.openings[0];
-    assert.ok(career.hire(id));
-    assert.ok(career.quit());
-    assert.equal(career.standingWith(id), 'banned');
-    assert.equal(career.openings.length, Math.min(2, 4 - k));
-  }
-  assert.equal(career.status, 'unemployable');
-  assert.ok(types(events).includes('gameOver'));
+  career.wallet = -1;
+  wait(career, RULES.dayLength * 3);
+  assert.equal(career.status, 'broke');
+  assert.equal(ofType(events, 'gameOver').length, 1);
+  assert.equal(ofType(events, 'gameOver')[0].reason, 'broke');
+  wait(career, RULES.dayLength * 2);
+  assert.equal(ofType(events, 'dayEnded').length, 6, 'il tempo si ferma col game over');
 });

@@ -1,8 +1,8 @@
-// La carriera di Gennaro: assunzioni, turni, consegne e licenziamenti.
-// Logica pura, senza DOM né canvas: riceve il tempo e la posizione del
-// fattorino e notifica ciò che succede tramite `onEvent`.
+// La carriera di Gennaro: calendario, assunzioni, consegne, licenziamenti e
+// spese per vivere. Logica pura, senza DOM né canvas: riceve il tempo e la
+// posizione del fattorino e notifica ciò che succede tramite `onEvent`.
 
-import { randInt, randRange, shuffle, pick } from '../core/math.js';
+import { pick, randInt, randRange, shuffle } from '../core/math.js';
 
 const round2 = (v) => Math.round(v * 100) / 100;
 const sum = (list, fn) => list.reduce((acc, x) => acc + fn(x), 0);
@@ -24,17 +24,58 @@ export function splitPizzas(total, families, max, rng = Math.random) {
 
 export const orderValue = (order) => round2(sum(order.pizzas, (p) => p.prezzo));
 
+const emptyLedger = (day) => ({ day, orders: [], pay: { base: 0, commission: 0, tips: 0 }, delivered: 0, missed: 0 });
+
 export class Career {
   constructor({ pizzerias, menu, surnames, rules, findAddress, rng = Math.random, onEvent = () => {} }) {
     Object.assign(this, { pizzerias, menu, surnames, rules, findAddress, rng, onEvent });
-    this.status = 'unemployed'; // unemployed | employed | unemployable
+    this.time = 0; // secondi di gioco dall'inizio
+    this.status = 'unemployed'; // unemployed | employed | broke
     this.employer = null;
-    this.banned = new Set(); // pizzerie che non ti riprenderanno mai
-    this.openings = [];
+    this.job = null; // { pizzeria, nextOrderAt, orders, earlyOrder }
+    this.bannedUntil = new Map(); // id → giorno da cui potrebbe riassumerti
+    this.openings = []; // chi assume oggi: Gennaro non lo sa finché non chiede
+    this.asked = new Set(); // pizzerie a cui ha già chiesto (da quando sono cambiate le offerte)
     this.wallet = 0;
-    this.day = 0;
-    this.shift = null;
+    this.daysInRed = 0;
+    this.ordersCreated = 0;
+    this.ledger = emptyLedger(1); // conti della giornata in corso
     this.rollOpenings();
+  }
+
+  // ---------------------------------------------------------------- calendar
+  get day() {
+    return Math.floor(this.time / this.rules.dayLength) + 1;
+  }
+
+  get dayTimeLeft() {
+    return this.rules.dayLength - (this.time % this.rules.dayLength);
+  }
+
+  endDay() {
+    const { rules } = this;
+    const ledger = this.ledger;
+    const living = round2(randRange(...rules.livingCost, this.rng));
+    this.wallet = round2(this.wallet - living);
+    this.daysInRed = this.wallet < 0 ? this.daysInRed + 1 : 0;
+    const pay = ledger.pay;
+    this.emit('dayEnded', {
+      ledger,
+      earned: round2(pay.base + pay.commission + pay.tips),
+      living,
+      wallet: this.wallet,
+      daysInRed: this.daysInRed,
+    });
+    this.ledger = emptyLedger(ledger.day + 1);
+
+    if (this.daysInRed >= rules.maxDaysInRed) {
+      this.status = 'broke';
+      this.employer = null;
+      this.job = null;
+      this.emit('gameOver', { reason: 'broke' });
+    } else if (this.status === 'unemployed') {
+      this.rollOpenings(); // ogni mattina cambia chi cerca un fattorino
+    }
   }
 
   // ---------------------------------------------------------------- hiring
@@ -42,30 +83,46 @@ export class Career {
     return this.pizzerias.find((p) => p.id === id);
   }
 
-  rollOpenings() {
-    const candidates = this.pizzerias.filter((p) => !this.banned.has(p.id)).map((p) => p.id);
-    this.openings = shuffle(candidates, this.rng).slice(0, this.rules.openings);
-    if (!candidates.length) this.status = 'unemployable';
+  isBanned(id) {
+    return (this.bannedUntil.get(id) ?? 0) > this.day;
   }
 
-  /** What a pizzeria thinks of Gennaro right now. */
+  rollOpenings() {
+    const candidates = this.pizzerias.filter((p) => !this.isBanned(p.id)).map((p) => p.id);
+    this.openings = shuffle(candidates, this.rng).slice(0, this.rules.openings);
+    this.asked.clear();
+  }
+
+  /**
+   * What Gennaro knows about a pizzeria. Whether it is hiring stays
+   * 'unknown' until he walks in and asks.
+   */
   standingWith(id) {
     if (this.employer === id) return 'employer';
-    if (this.banned.has(id)) return 'banned';
-    if (this.status === 'employed') return 'busy'; // lavori già altrove
+    if (this.isBanned(id)) return 'banned';
+    if (this.status !== 'unemployed') return 'busy';
+    if (!this.asked.has(id)) return 'unknown';
     return this.openings.includes(id) ? 'hiring' : 'notHiring';
   }
 
+  /** Gennaro asks at the counter. Returns the (now known) standing. */
+  ask(id) {
+    if (this.status === 'unemployed' && !this.isBanned(id)) this.asked.add(id);
+    return this.standingWith(id);
+  }
+
   hire(id) {
-    if (this.standingWith(id) !== 'hiring') return false;
+    if (this.status !== 'unemployed' || this.isBanned(id) || !this.openings.includes(id)) return false;
     this.status = 'employed';
     this.employer = id;
     this.openings = [];
-    this.emit('hired', { pizzeria: this.pizzeria(id) });
+    this.asked.clear();
+    this.job = { pizzeria: this.pizzeria(id), nextOrderAt: this.time, orders: [], earlyOrder: false };
+    this.emit('hired', { pizzeria: this.job.pizzeria });
     return true;
   }
 
-  /** Gennaro se ne va: quella pizzeria non lo riprenderà mai più. */
+  /** Gennaro se ne va: quella pizzeria non lo riprende per `rehireAfterDays` giorni. */
   quit() {
     if (this.status !== 'employed') return false;
     this.leaveJob('quit');
@@ -73,69 +130,31 @@ export class Career {
   }
 
   leaveJob(reason) {
-    const pizzeria = this.pizzeria(this.employer);
-    this.banned.add(this.employer);
-    this.employer = null;
-    this.status = 'unemployed';
-    this.rollOpenings(); // so the end-of-shift report already knows who is hiring
-    if (this.shift) this.endShift(reason);
-    this.emit(reason, { pizzeria });
-    if (this.status === 'unemployable') this.emit('gameOver', {});
-  }
-
-  // ---------------------------------------------------------------- shifts
-  get onShift() {
-    return !!this.shift;
-  }
-
-  get activeOrders() {
-    return this.shift ? this.shift.orders.filter((o) => o.state === 'open') : [];
-  }
-
-  startShift() {
-    if (this.status !== 'employed' || this.shift) return false;
-    this.day++;
-    this.shift = {
-      day: this.day,
-      pizzeria: this.pizzeria(this.employer),
-      elapsed: 0,
-      nextOrderAt: 0,
-      orders: [],
-      pay: { base: 0, commission: 0, tips: 0 },
-      delivered: 0,
-      missed: 0,
-    };
-    this.emit('shiftStarted', { shift: this.shift });
-    this.createOrder(); // la prima consegna parte subito
-    return true;
-  }
-
-  get shiftTimeLeft() {
-    return this.shift ? Math.max(0, this.rules.shiftLength - this.shift.elapsed) : 0;
-  }
-
-  get nextOrderIn() {
-    const s = this.shift;
-    if (!s || s.nextOrderAt >= this.rules.shiftLength) return null;
-    return Math.max(0, s.nextOrderAt - s.elapsed);
-  }
-
-  endShift(reason) {
-    const shift = this.shift;
+    const job = this.job;
     for (const order of this.activeOrders) this.closeOrder(order, { judged: false });
-    this.shift = null;
-    const pay = shift.pay;
-    this.emit('shiftEnded', { shift, reason, total: round2(pay.base + pay.commission + pay.tips) });
+    this.bannedUntil.set(job.pizzeria.id, this.day + this.rules.rehireAfterDays);
+    this.employer = null;
+    this.job = null;
+    this.status = 'unemployed';
+    this.rollOpenings();
+    this.emit(reason, { pizzeria: job.pizzeria, rehireDay: this.day + this.rules.rehireAfterDays });
   }
 
   // ---------------------------------------------------------------- orders
+  get activeOrders() {
+    return this.job ? this.job.orders.filter((o) => o.state === 'open') : [];
+  }
+
+  get nextOrderIn() {
+    return this.job ? Math.max(0, this.job.nextOrderAt - this.time) : null;
+  }
+
   createOrder() {
-    const s = this.shift;
-    const { rules, rng } = this;
+    const { rules, rng, job } = this;
     const total = randInt(...rules.pizzasPerOrder, rng);
     const counts = splitPizzas(total, rules.familiesPerOrder, rules.maxPizzasPerFamily, rng);
     const names = shuffle(this.surnames, rng);
-    const taken = [s.pizzeria.pos];
+    const taken = [job.pizzeria.pos];
     const stops = counts.map((n, i) => {
       const address = this.findAddress(rng, taken);
       taken.push([address.x, address.y]);
@@ -143,33 +162,33 @@ export class Career {
       return { family: names[i], address, pizzas, delivered: false, deliveredAt: null, tip: 0 };
     });
     const order = {
-      number: s.orders.length + 1,
-      createdAt: s.elapsed,
-      deadline: s.elapsed + rules.orderTime,
+      number: ++this.ordersCreated,
+      createdAt: this.time,
+      deadline: this.time + rules.orderTime,
       pickedUp: false,
       state: 'open', // open | done | failed
       stops,
       pizzaCount: total,
     };
-    s.orders.push(order);
-    s.nextOrderAt += rules.orderInterval;
+    job.orders = [...job.orders.filter((o) => o.state === 'open'), order];
+    job.nextOrderAt = this.time + rules.orderInterval;
+    job.earlyOrder = false;
     this.emit('orderCreated', { order });
     return order;
   }
 
   timeLeft(order) {
-    return Math.max(0, order.deadline - this.shift.elapsed);
+    return Math.max(0, order.deadline - this.time);
   }
 
   tipTimeLeft(order) {
-    return Math.max(0, order.createdAt + this.rules.tipWindow - this.shift.elapsed);
+    return Math.max(0, order.createdAt + this.rules.tipWindow - this.time);
   }
 
   deliver(order, stop) {
-    const s = this.shift;
     stop.delivered = true;
-    stop.deliveredAt = s.elapsed;
-    if (s.elapsed - order.createdAt <= this.rules.tipWindow) {
+    stop.deliveredAt = this.time;
+    if (this.time - order.createdAt <= this.rules.tipWindow) {
       stop.tip = round2(orderValue(stop) * randRange(...this.rules.tipRange, this.rng));
     }
     this.emit('delivered', { order, stop });
@@ -178,25 +197,23 @@ export class Career {
 
   /** Pays the order and, if pizzas were left undelivered, rolls for the sack. */
   closeOrder(order, { judged = true } = {}) {
-    const s = this.shift;
-    const { rules } = this;
+    const { rules, ledger } = this;
     const delivered = order.stops.filter((x) => x.delivered);
     const missed = sum(order.stops, (x) => (x.delivered ? 0 : x.pizzas.length));
     const pay = {
-      base: rules.basePay,
+      base: delivered.length ? rules.basePay : 0, // il fisso solo se hai consegnato qualcosa
       commission: round2(rules.commission * sum(delivered, orderValue)),
       tips: round2(sum(delivered, (x) => x.tip)),
     };
     pay.total = round2(pay.base + pay.commission + pay.tips);
 
-    order.state = missed ? 'failed' : 'done';
-    order.pay = pay;
-    order.missed = missed;
-    s.pay.base += pay.base;
-    s.pay.commission = round2(s.pay.commission + pay.commission);
-    s.pay.tips = round2(s.pay.tips + pay.tips);
-    s.delivered += order.pizzaCount - missed;
-    s.missed += missed;
+    Object.assign(order, { state: missed ? 'failed' : 'done', pay, missed });
+    ledger.orders.push(order);
+    ledger.pay.base += pay.base;
+    ledger.pay.commission = round2(ledger.pay.commission + pay.commission);
+    ledger.pay.tips = round2(ledger.pay.tips + pay.tips);
+    ledger.delivered += order.pizzaCount - missed;
+    ledger.missed += missed;
     this.wallet = round2(this.wallet + pay.total);
     this.emit('orderClosed', { order, pay, missed });
 
@@ -210,17 +227,20 @@ export class Career {
   // ---------------------------------------------------------------- tick
   /** Advance the clock. `courier` = { x, y, speed } in world px. */
   update(dt, courier) {
-    const s = this.shift;
-    if (!s) return;
-    s.elapsed += dt;
+    if (this.status === 'broke') return;
+    this.time += dt;
+    while (this.status !== 'broke' && this.day > this.ledger.day) this.endDay();
+    const job = this.job;
+    if (!job) return;
 
-    if (s.elapsed >= s.nextOrderAt && s.nextOrderAt < this.rules.shiftLength) this.createOrder();
+    if (this.time >= job.nextOrderAt) this.createOrder();
 
+    const [px, py] = job.pizzeria.pos;
+    const atShop = Math.hypot(courier.x - px, courier.y - py) < PICKUP_RANGE;
     for (const order of this.activeOrders) {
-      if (this.shift !== s) return; // fired a moment ago
+      if (this.job !== job) return; // licenziato un attimo fa
       if (!order.pickedUp) {
-        const [px, py] = s.pizzeria.pos;
-        if (Math.hypot(courier.x - px, courier.y - py) < PICKUP_RANGE) {
+        if (atShop) {
           order.pickedUp = true;
           this.emit('pickedUp', { order });
         }
@@ -232,10 +252,16 @@ export class Career {
           }
         }
       }
-      if (order.state === 'open' && s.elapsed >= order.deadline) this.closeOrder(order);
+      if (order.state === 'open' && this.time >= order.deadline) this.closeOrder(order);
     }
 
-    if (this.shift === s && s.elapsed >= this.rules.shiftLength && !this.activeOrders.length) this.endShift('end');
+    // Tornato in pizzeria a mani vuote prima del prossimo ordine? Ne arriva uno a breve.
+    const [, maxDelay] = this.rules.earlyOrderDelay;
+    if (this.job === job && atShop && !this.activeOrders.length && job.nextOrderAt > this.time + maxDelay) {
+      job.nextOrderAt = this.time + randRange(...this.rules.earlyOrderDelay, this.rng);
+      job.earlyOrder = true;
+      this.emit('earlyOrder', { in: job.nextOrderAt - this.time });
+    }
   }
 
   emit(type, data) {

@@ -1,4 +1,4 @@
-export const euro = (v) => '€' + v.toFixed(2).replace('.', ',');
+export const euro = (v) => (v < 0 ? '-' : '') + '€' + Math.abs(v).toFixed(2).replace('.', ',');
 
 export function clock(seconds) {
   const s = Math.max(0, Math.ceil(seconds));

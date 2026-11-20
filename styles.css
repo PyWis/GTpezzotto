@@ -243,3 +243,6 @@ canvas {
   line-height: 2;
   padding: 24px;
 }
+.dlg-body .warn {
+  color: #ff7b6b;
+}
