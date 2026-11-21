@@ -95,6 +95,17 @@ export const RULES = Object.freeze({
   repair: {
     costPerPoint: 3, // € per ogni punto percentuale di velocità da recuperare
   },
+  vip: {
+    fromDay: 2, // il primo giorno niente clienti speciali
+    first: 'Lucia', // la prima è sempre lei
+    afterOrders: 3, // dopo il terzo ordine della giornata…
+    chance: 0.2, // …ogni nuovo ordine ha il 20% di essere un cliente speciale…
+    lateWindow: 5 * 60, // …che diventa il 60% negli ultimi 5 minuti della giornata
+    lateChance: 0.6,
+    pizzas: 7, // un cliente speciale chiede sempre 7 pizze
+    time: 80, // s per consegnarle, dal ritiro
+    nextOrderAfterPickup: 30, // 30 s dopo il ritiro arriva già l'ordine successivo
+  },
   legend: {
     day: 10, // la missione segreta: giorno 10…
     after: 10 * 60, // …dopo 10 minuti di gioco

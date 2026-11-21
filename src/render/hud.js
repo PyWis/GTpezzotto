@@ -105,12 +105,21 @@ function panelLines(career, player) {
     const urgent = t < 30;
     const tip = career.tipTimeLeft(order);
     const title =
-      order.kind === 'footballer'
-        ? 'CALCIATORE DEL NAPOLI'
-        : order.kind === 'side'
-          ? `EXTRA ${order.pizzeria.name.toUpperCase()}`
-          : `#${order.number}`;
-    const color = order.kind === 'footballer' ? '#5ec8ff' : order.kind === 'side' ? '#ff9f40' : STOP_COLOR;
+      order.kind === 'vip'
+        ? `VIP ${order.vip.toUpperCase()}`
+        : order.kind === 'footballer'
+          ? 'CALCIATORE DEL NAPOLI'
+          : order.kind === 'side'
+            ? `EXTRA ${order.pizzeria.name.toUpperCase()}`
+            : `#${order.number}`;
+    const color =
+      order.kind === 'vip'
+        ? '#ff6fd8'
+        : order.kind === 'footballer'
+          ? '#5ec8ff'
+          : order.kind === 'side'
+            ? '#ff9f40'
+            : STOP_COLOR;
     add(
       `${title}  ${clock(t)}${tip > 0 && order.pickedUp ? `  MANCIA ${clock(tip)}` : ''}`,
       urgent && Math.sin(time.t * 10) > 0 ? '#ff5b4b' : color,

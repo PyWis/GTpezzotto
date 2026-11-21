@@ -13,7 +13,7 @@ function seeded(seed) {
   };
 }
 
-function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [], blessed = false } = {}) {
+function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [], blessed = false, vips = [] } = {}) {
   const pizzerias = PIZZERIAS.map((p, i) => ({ ...p, pos: [i * 1000, 0] }));
   let n = 0;
   const findAddress = (r, avoid, options) => {
@@ -28,6 +28,7 @@ function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [], blessed = 
     rules: { ...RULES, ...rules },
     findAddress,
     stadium: STADIUM,
+    vips,
     blessed,
     rng,
     onEvent: (e) => events.push(e),
@@ -549,4 +550,96 @@ test('da benedetto ogni calciatore dà 10€ in più (oltre al bonus), e vale an
     assert.equal(order.pay.total, blessed ? 10 : 0);
     assert.equal(career.payMultiplier, 1.2, 'il bonus normale resta');
   }
+});
+
+// ------------------------------------------------------------------ clienti speciali
+const VIPS = ['Lucia', 'Gaetano', 'Ciro'].map((name, i) => ({
+  name,
+  address: { x: 9000 + i * 700, y: 100, label: name },
+}));
+const DAY = RULES.dayLength;
+/** Always the special customer when the dice decide it (rng 0), never the footballer otherwise. */
+const lucky = () => 0;
+
+test('special customers: never on day 1', () => {
+  const { career } = makeCareer({ rng: lucky, vips: VIPS });
+  hire(career);
+  wait(career, DAY - 2);
+  assert.ok(career.orders.every((o) => o.kind !== 'vip'));
+  assert.equal(career.vipChance, 0);
+});
+
+test('special customers: from day 2, after the third order (20%), Lucia first, one per day', () => {
+  const { career, events } = makeCareer({ rng: lucky, vips: VIPS });
+  career.time = DAY; // giorno 2
+  career.update(0, far);
+  hire(career);
+  assert.equal(career.vipChance, 0);
+  career.update(0, far); // 1° ordine
+  assert.equal(career.dayOrders, 1);
+  career.job.nextOrderAt = career.time;
+  career.update(0, far);
+  career.job.nextOrderAt = career.time;
+  career.update(0, far);
+  assert.equal(career.dayOrders, 3);
+  assert.equal(career.vipChance, RULES.vip.chance);
+  career.job.nextOrderAt = career.time;
+  career.update(0, far);
+  const vip = ofType(events, 'orderCreated').at(-1).order;
+  assert.equal(vip.kind, 'vip');
+  assert.equal(vip.vip, 'Lucia');
+  assert.equal(vip.pizzaCount, 7);
+  assert.deepEqual(vip.stops[0].address, VIPS[0].address);
+  assert.equal(career.vipChance, 0); // solo uno al giorno
+});
+
+test('special customers: 60% in the last 5 minutes', () => {
+  const { career } = makeCareer({ rng: lucky, vips: VIPS });
+  career.time = DAY + DAY - RULES.vip.lateWindow + 1;
+  career.update(0, far);
+  hire(career);
+  assert.equal(career.vipChance, RULES.vip.lateChance);
+  career.update(0, far);
+  assert.equal(career.orders[0].kind, 'vip');
+});
+
+test('special customers: 80 s from pickup, next order 30 s after, unique dialogue counter', () => {
+  const { career, events } = makeCareer({ rng: lucky, vips: VIPS });
+  career.time = 2 * DAY - 100;
+  career.update(0, far);
+  const shop = hire(career);
+  career.update(0, far);
+  const order = career.orders[0];
+  assert.equal(order.kind, 'vip');
+  career.update(1, at(shop.pos));
+  assert.ok(order.pickedUp);
+  assert.equal(order.deadline, career.time + RULES.vip.time);
+  assert.equal(career.job.nextOrderAt, career.time + RULES.vip.nextOrderAfterPickup);
+  deliverAll(career, order);
+  assert.equal(order.state, 'done');
+  assert.equal(ofType(events, 'delivered').at(-1).stop.visit, 1);
+  assert.equal(career.vipVisits.get('Lucia'), 1);
+  // Lucia already met: the next one is someone new.
+  assert.notEqual(career.nextVip().name, 'Lucia');
+  // Saved and restored.
+  const copy = makeCareer({ vips: VIPS }).career;
+  copy.restore(JSON.parse(JSON.stringify(career.serialize())));
+  assert.equal(copy.vipVisits.get('Lucia'), 1);
+  assert.equal(copy.vipDay, career.vipDay);
+});
+
+test('special customers: missed in 80 s', () => {
+  const { career } = makeCareer({ rng: () => 0.99, vips: VIPS });
+  career.time = 2 * DAY - 100;
+  career.update(0, far);
+  career.rng = lucky;
+  const shop = hire(career);
+  career.update(0, far);
+  const order = career.orders[0];
+  career.update(1, at(shop.pos));
+  career.rng = () => 0.99; // niente licenziamento
+  wait(career, RULES.vip.time + 1);
+  assert.equal(order.state, 'failed');
+  assert.equal(order.missed, 7);
+  assert.equal(career.vipVisits.get('Lucia'), undefined);
 });
