@@ -4,8 +4,9 @@
 
 import { clock, euro, plural } from '../core/format.js';
 import { pick } from '../core/math.js';
-import { STADIUM_GATE, TILE } from '../data/city.js';
+import { districtAt, STADIUM_GATE, TILE } from '../data/city.js';
 import { GARAGE, MECHANIC_LINES, MENU, PIZZERIAS, REPAIR_SHOP, RULES, SURNAMES } from '../data/pizza.js';
+import { VIP_COLOR, VIP_CUSTOMERS } from '../data/vip.js';
 import { snapToWalkable } from '../world/map.js';
 import { sfx } from '../audio.js';
 import { html, queueDialog, raw, showDialog } from '../ui/dialog.js';
@@ -25,7 +26,9 @@ export { GARAGE, REPAIR_SHOP };
 export const FOOTBALLER_COLOR = '#5ec8ff';
 export const SIDE_COLOR = '#ff9f40';
 export const LEGEND_COLOR = '#ffe14d';
+export { VIP_COLOR };
 const KIND_COLOR = {
+  [OrderKind.VIP]: VIP_COLOR,
   [OrderKind.FOOTBALLER]: FOOTBALLER_COLOR,
   [OrderKind.SIDE]: SIDE_COLOR,
   [OrderKind.LEGEND]: LEGEND_COLOR,
@@ -43,6 +46,22 @@ const STADIUM_PITCH = {
   district: 'Fuorigrotta',
 };
 
+/** I clienti speciali, ognuno al suo monumento. */
+const VIPS = VIP_CUSTOMERS.map((c) => {
+  const [x, y] = snapToWalkable(...c.at);
+  return {
+    name: c.name,
+    address: {
+      x,
+      y,
+      street: c.place,
+      label: c.place,
+      district: districtAt(Math.floor(x / TILE), Math.floor(y / TILE)),
+    },
+  };
+});
+const vipData = (name) => VIP_CUSTOMERS.find((c) => c.name === name);
+
 export const career = new Career({
   pizzerias: PIZZERIAS,
   menu: MENU,
@@ -50,6 +69,7 @@ export const career = new Career({
   rules: RULES,
   findAddress,
   stadium: STADIUM_PITCH,
+  vips: VIPS,
   blessed: readBlessing(),
   onEvent: handleEvent,
 });
@@ -82,6 +102,12 @@ export const legendOrder = () => career.activeOrders.find((o) => o.kind === Orde
 
 /** A line the mechanic says when Gennaro turns up: `repair` (Gianturco) or `tuning` (Fuorigrotta). */
 export const mechanicLine = (shop) => pick(MECHANIC_LINES[shop]);
+
+/** The special customer waiting by a monument (null if none), with their look and catchphrase. */
+export function vipOrder() {
+  const order = career.activeOrders.find((o) => o.kind === OrderKind.VIP);
+  return order ? { order, customer: vipData(order.vip) } : null;
+}
 
 /** The footballer waiting in the street for his pizza (null if none). */
 export const footballerOrder = () => career.activeOrders.find((o) => o.kind === OrderKind.FOOTBALLER) ?? null;
@@ -401,6 +427,20 @@ function leftJobDialog({ type, pizzeria, rehireDay }) {
   });
 }
 
+/** Gennaro and the special customer have a chat: the first time is always different from the next ones. */
+function vipDialog(name, stop) {
+  const c = vipData(name);
+  if (!c) return;
+  const lines = stop.visit > 1 ? c.again : c.first;
+  const tip = stop.tip ? html`<p class="small">${name} ti lascia una mancia di ${euro(stop.tip)}.</p>` : '';
+  queueDialog({
+    title: `${name.toUpperCase()} · ${c.place.toUpperCase()}`,
+    color: VIP_COLOR,
+    body: lines.map(([who, text]) => html`<p><b>${who === 'g' ? 'Gennaro' : name}:</b> «${text}»</p>`).join('') + tip,
+    buttons: [{ label: 'Continua', cancel: true, badge: '↵' }],
+  });
+}
+
 function handleEvent(e) {
   switch (e.type) {
     case 'hired':
@@ -431,6 +471,14 @@ function handleEvent(e) {
             </p>`,
           buttons: [{ label: 'Jamme!', cancel: true, badge: '↵' }],
         });
+      } else if (o.kind === OrderKind.VIP) {
+        const c = vipData(o.vip);
+        showBanner('Cliente speciale!', 4);
+        toast(
+          `${o.vip} vuole le pizze solo da Gennaro: ${o.pizzaCount} pizze a ${c.place}. Dal ritiro hai ${clock(RULES.vip.time)}!`,
+          VIP_COLOR,
+          7,
+        );
       } else if (o.kind === OrderKind.SIDE) {
         toast(`Consegna extra per ${o.pizzeria.name}: ${o.pizzaCount} pizze, lontano!`, SIDE_COLOR, 4.5);
       } else {
@@ -485,6 +533,10 @@ function handleEvent(e) {
       break;
     case 'pickedUp':
       sfx.pickup();
+      if (e.order.kind === OrderKind.VIP) {
+        toast(`Le ${e.order.pizzaCount} pizze di ${e.order.vip}: corri, hai ${clock(RULES.vip.time)}!`, VIP_COLOR, 4);
+        break;
+      }
       toast(`Ordine #${e.order.number} caricato: ${e.order.stops.map((s) => s.family).join(', ')}`, '#fff', 4);
       break;
     case 'delivered': {
@@ -498,6 +550,10 @@ function handleEvent(e) {
           FOOTBALLER_COLOR,
           4,
         );
+        break;
+      }
+      if (e.order.kind === OrderKind.VIP) {
+        vipDialog(e.order.vip, stop);
         break;
       }
       if (e.order.kind === OrderKind.LEGEND) {
@@ -516,6 +572,14 @@ function handleEvent(e) {
           sfx.failed();
           toast("Al centrocampo non c'è più nessuno. Chissà chi era...", '#ff5b4b', 5);
         } else toast(`Richiesta speciale completata: +${euro(e.pay.total)}`, LEGEND_COLOR, 4);
+      } else if (e.order.kind === OrderKind.VIP) {
+        if (e.missed) {
+          sfx.failed();
+          toast(`${e.order.vip} ha aspettato troppo: ${e.missed} pizze perse`, '#ff5b4b', 5);
+        } else {
+          sfx.coins();
+          toast(`Cliente speciale servito: +${euro(e.pay.total)}`, VIP_COLOR, 4);
+        }
       } else if (e.order.kind === OrderKind.FOOTBALLER) {
         if (e.missed) {
           sfx.failed();

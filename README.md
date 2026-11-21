@@ -34,6 +34,18 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
   una pizza». Una pizza, **90 secondi**, nessun guadagno (la pizza è gratis), ma se arrivi in tempo per **i 2 giorni
   successivi** tutti i guadagni sono del **+20%**. Il bonus si accumula (due calciatori = +40%). Il calciatore aspetta
   per strada, in maglia azzurra, palleggiando.
+- **Clienti speciali (VIP)**: in città c'è chi vuole le pizze **solo da Gennaro**. Sono dodici napoletani
+  (Gaetano, Ciro, Aniello, Pasquale, Vincenzo, Salvatore, Carmela, Assunta, Immacolata, Lucia, Concetta, Nunzia), ognuno
+  vicino a un monumento: Lucia alla Fontana dell'Esedra della Mostra d'Oltremare, Gaetano al Maschio Angioino, Ciro a
+  Castel dell'Ovo, Aniello al Duomo, Pasquale alla Stazione Centrale, Vincenzo alla Galleria Umberto I, Salvatore a
+  Castel Sant'Elmo, Carmela al Museo Archeologico, Assunta a San Francesco di Paola, Immacolata al Teatro San Carlo,
+  Concetta alla Città della Scienza e Nunzia alla fontana del Centro Direzionale. Chiedono sempre **7 pizze**.
+  - Il primo giorno non chiama nessuno. Dal **giorno 2**, dopo il **terzo ordine** della giornata ogni nuovo ordine ha il
+    **20%** di essere un cliente speciale; negli **ultimi 5 minuti** della giornata il **60%**. **Uno solo al giorno.**
+  - La prima è sempre **Lucia**, che spiega a Gennaro che in città ci sono clienti che vogliono solo lui.
+  - Dal ritiro ci sono **80 secondi** per consegnare; **30 secondi** dopo il ritiro arriva già l'ordine successivo.
+  - A ogni consegna c'è un **dialogo** fra Gennaro e il cliente: uno per il primo incontro, uno per le volte dopo.
+    Paga e mance come un ordine normale; le pizze perse contano per il licenziamento.
 - **Officina 'O Turbo** (Fuorigrotta, Via Leopardi): portaci la Vespa e per **1000 €** la modificano; quella Vespa va il
   **20% più veloce**.
 - **Vespa ammaccata**: ogni urto (contro un muro o un'auto) la rallenta dell'**1%**, fino a un minimo del 50%. La si
@@ -86,7 +98,7 @@ e apri `http://localhost:8080`. Funziona così com'è anche su GitHub Pages.
 npm test
 ```
 
-I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, l'officina, la riparazione, la missione segreta, il salvataggio, spese giornaliere e game over.
+I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, i clienti speciali, l'officina, la riparazione, la missione segreta, il salvataggio, spese giornaliere e game over.
 
 ## La città
 

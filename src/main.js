@@ -57,6 +57,8 @@ import {
   pizzeriaLook,
   REPAIR_SHOP,
   stopColor,
+  VIP_COLOR,
+  vipOrder,
 } from './game/job.js';
 import { clearSave, loadGame, readSave, saveGame } from './game/save.js';
 import { MAX_HANDOFF_SPEED } from './game/career.js';
@@ -314,6 +316,7 @@ function update(dt) {
   if (player.sayT > 0) player.sayT -= dt;
   shake = Math.max(shake, people.updatePedestrians(dt), traffic.updateTraffic(dt));
   updateFootballer(dt);
+  updateVip(dt);
   updateMechanics(dt);
   updateLegend(dt);
   updateRumors(dt);
@@ -450,6 +453,44 @@ function drawFootballer() {
   ctx.stroke();
 }
 
+// The special customer, waiting next to their monument with a pink star overhead.
+const vip = { say: '', sayT: 0, order: null };
+const VIP_LINES = ['Uè, Gennà! Ccà!', "'E pizze toje so' 'e meglio!", 'Jamme, ca se fanno fredde!'];
+
+function updateVip(dt) {
+  const current = vipOrder();
+  if (!current) {
+    vip.order = null;
+    return;
+  }
+  const { order, customer } = current;
+  const { address } = order.stops[0];
+  if (vip.order !== order) Object.assign(vip, customer.look, { say: '', sayT: 0 });
+  Object.assign(vip, { x: address.x + 12, y: address.y - 4, order, call: customer.call });
+  if (vip.sayT > 0) vip.sayT -= dt;
+  else if (Math.hypot(player.x - vip.x, player.y - vip.y) < 280 && Math.random() < dt * 0.4)
+    say(vip, Math.random() < 0.5 ? vip.call : VIP_LINES[Math.floor(Math.random() * VIP_LINES.length)], 2.4);
+}
+
+function drawVip() {
+  if (!vip.order || vipOrder()?.order !== vip.order || !isVisible(vip.x, vip.y)) return;
+  const [sx, sy] = toScreen(vip.x, vip.y);
+  const z = camera.zoom;
+  ctx.globalAlpha = 0.3 + 0.12 * Math.sin(time.t * 3);
+  ctx.fillStyle = VIP_COLOR;
+  ctx.beginPath();
+  ctx.arc(sx, sy, 13 * z, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
+  drawPerson(sx, sy, Math.atan2(player.y - vip.y, player.x - vip.x), vip, 0, false);
+  // Una stellina rosa che saltella sopra la testa.
+  const hop = Math.abs(Math.sin(time.t * 3)) * 4 * z;
+  ctx.fillStyle = VIP_COLOR;
+  ctx.font = `${Math.round(10 * z)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.fillText('★', sx, sy - 14 * z - hop);
+}
+
 // The two mechanics, standing at their shop doors. Each has something to say about the other.
 const mechanics = [
   { shop: GARAGE, kind: 'tuning', shirt: '#2b5f9e', trousers: '#2b5f9e', hair: '#3a2a1a', skin: '#d9a77f' },
@@ -556,6 +597,7 @@ function drawWorld() {
   for (const c of traffic.parkedCars) if (isVisible(c.x, c.y)) drawCar(c);
   for (const c of traffic.cars) if (isVisible(c.x, c.y)) drawCar(c);
   drawFootballer();
+  drawVip();
   drawMechanics();
   drawLegend();
   if (player.mode === 'foot') drawPerson(...toScreen(player.x, player.y), player.a, player, player.walk, player.moving);
@@ -578,6 +620,7 @@ function drawWorld() {
   for (const p of people.pedestrians) if (isTalking(p) && isVisible(p.x, p.y)) drawBubble(p.x, p.y, p.say);
   for (const c of traffic.cars) if (isTalking(c) && isVisible(c.x, c.y)) drawBubble(c.x, c.y, c.say);
   if (footballerOrder() && isTalking(footballer)) drawBubble(footballer.x, footballer.y, footballer.say);
+  if (vip.order && isTalking(vip)) drawBubble(vip.x, vip.y, vip.say);
   for (const m of mechanics) if (isTalking(m) && isVisible(m.x, m.y)) drawBubble(m.x, m.y, m.say);
   if (legendVisible() && isTalking(legend)) drawBubble(legend.x, legend.y, legend.say);
   if (isTalking(player)) drawBubble(player.x, player.y, player.say);

@@ -41,13 +41,17 @@ export const OrderKind = Object.freeze({
   SIDE: 'side',
   FOOTBALLER: 'footballer',
   LEGEND: 'legend',
+  VIP: 'vip',
 });
 
 /** Orders that belong to the job (the others don't make the employer angry, nor stay behind if you quit). */
-const isJobOrder = (o) => o.kind === OrderKind.REGULAR || o.kind === OrderKind.FOOTBALLER;
+const isJobOrder = (o) => o.kind === OrderKind.REGULAR || o.kind === OrderKind.FOOTBALLER || o.kind === OrderKind.VIP;
 
 export class Career {
-  /** `stadium`: the address of the pitch, where the secret mission ends ({ x, y, label… }). */
+  /**
+   * `stadium`: the address of the pitch, where the secret mission ends ({ x, y, label… }).
+   * `vips`: the special customers, [{ name, address }], each waiting next to a monument.
+   */
   constructor({
     pizzerias,
     menu,
@@ -55,11 +59,12 @@ export class Career {
     rules,
     findAddress,
     stadium = null,
+    vips = [],
     blessed = false,
     rng = Math.random,
     onEvent = () => {},
   }) {
-    Object.assign(this, { pizzerias, menu, surnames, rules, findAddress, stadium, rng, onEvent });
+    Object.assign(this, { pizzerias, menu, surnames, rules, findAddress, stadium, vips, rng, onEvent });
     // Benedetto dal Dio del Calcio: ogni calciatore dà una mancia. Vale per sempre, anche nelle partite nuove.
     this.blessed = blessed;
     this.time = 0; // secondi di gioco dall'inizio
@@ -77,6 +82,9 @@ export class Career {
     this.sideAsked = new Map(); // pizzeria → quando ha chiesto l'ultima volta un lavoretto
     this.tunedVespas = new Set(); // Vespe modificate in officina
     this.legendFired = false; // la missione segreta arriva una volta sola
+    this.dayOrders = 0; // ordini del datore di lavoro arrivati oggi
+    this.vipDay = 0; // l'ultimo giorno in cui ha chiamato un cliente speciale (uno al giorno)
+    this.vipVisits = new Map(); // cliente speciale → quante volte Gennaro gli ha portato le pizze
     this.ledger = emptyLedger(1); // conti della giornata in corso
     this.rollOpenings();
   }
@@ -105,6 +113,7 @@ export class Career {
       daysInRed: this.daysInRed,
     });
     this.ledger = emptyLedger(ledger.day + 1);
+    this.dayOrders = 0;
     this.orders = this.activeOrders;
     this.boosts = this.boosts.filter((b) => b.until > this.time);
 
@@ -217,12 +226,24 @@ export class Career {
     return order;
   }
 
-  /** Next order from the employer: usually a normal one, once in a while the footballer. */
+  /** Next order from the employer: usually a normal one, once in a while a special customer or the footballer. */
   createOrder() {
     const { rules, rng, job } = this;
-    const footballer = rng() < rules.footballer.chance;
+    const vip = this.rollVip();
+    const footballer = !vip && rng() < rules.footballer.chance;
     let order;
-    if (footballer) {
+    if (vip) {
+      order = this.addOrder({
+        kind: OrderKind.VIP,
+        pizzeria: job.pizzeria,
+        counts: [rules.vip.pizzas],
+        time: rules.orderTime, // per ritirarle; dal ritiro ci sono solo `vip.time` secondi
+        families: [vip.name],
+        addresses: [vip.address],
+      });
+      order.vip = vip.name;
+      this.vipDay = this.day;
+    } else if (footballer) {
       order = this.addOrder({
         kind: OrderKind.FOOTBALLER,
         pizzeria: job.pizzeria,
@@ -242,8 +263,35 @@ export class Career {
     }
     job.nextOrderAt = this.time + rules.orderInterval;
     job.earlyOrder = false;
+    this.dayOrders++;
     this.emit('orderCreated', { order });
     return order;
+  }
+
+  // ---------------------------------------------------------------- special customers
+  /** Chance that the next order is a special customer: 0 on day 1, once one has called today, or before the 4th order. */
+  get vipChance() {
+    const v = this.rules.vip;
+    if (!v || !this.vips.length || this.day < v.fromDay || this.vipDay === this.day) return 0;
+    if (this.dayTimeLeft <= v.lateWindow) return v.lateChance;
+    return this.dayOrders >= v.afterOrders ? v.chance : 0;
+  }
+
+  /** Rolls for a special customer; returns who calls (or null). */
+  rollVip() {
+    const chance = this.vipChance;
+    if (!chance || this.rng() >= chance) return null;
+    return this.nextVip();
+  }
+
+  /** Lucia first; then someone Gennaro hasn't met yet; once he knows them all, anyone. */
+  nextVip() {
+    const { vips, rng } = this;
+    const met = (v) => (this.vipVisits.get(v.name) ?? 0) > 0;
+    const first = vips.find((v) => v.name === this.rules.vip.first);
+    if (first && !met(first)) return first;
+    const unmet = vips.filter((v) => !met(v));
+    return pick(unmet.length ? unmet : vips, rng);
   }
 
   // ---------------------------------------------------------------- side jobs
@@ -280,6 +328,14 @@ export class Career {
   pickUp(order) {
     order.pickedUp = true;
     order.legStart = this.time;
+    if (order.kind === OrderKind.VIP) {
+      // Il cliente speciale aspetta poco: 80 secondi dal ritiro. E 30 secondi dopo arriva già il prossimo ordine.
+      const { vip } = this.rules;
+      order.deadline = this.time + vip.time;
+      const job = this.job;
+      if (job && job.pizzeria === order.pizzeria)
+        job.nextOrderAt = Math.min(job.nextOrderAt, this.time + vip.nextOrderAfterPickup);
+    }
     this.emit('pickedUp', { order });
   }
 
@@ -369,6 +425,11 @@ export class Career {
       stop.tip = round2(orderValue(stop) * randRange(...this.rules.tipRange, this.rng));
     }
     order.legStart = this.time; // la mancia si calcola su ogni singola consegna
+    if (order.kind === OrderKind.VIP) {
+      const visit = (this.vipVisits.get(order.vip) ?? 0) + 1;
+      this.vipVisits.set(order.vip, visit);
+      stop.visit = visit;
+    }
     this.emit('delivered', { order, stop });
     if (order.kind === OrderKind.LEGEND && !this.blessed) {
       this.blessed = true;
@@ -479,6 +540,9 @@ export class Career {
       sideAsked: [...this.sideAsked],
       tuned: [...this.tunedVespas].map((v) => vespas.indexOf(v)).filter((i) => i >= 0),
       legendFired: this.legendFired,
+      dayOrders: this.dayOrders,
+      vipDay: this.vipDay,
+      vipVisits: [...this.vipVisits],
     };
   }
 
@@ -505,6 +569,9 @@ export class Career {
       sideAsked: new Map(data.sideAsked),
       tunedVespas: new Set(data.tuned.map((i) => vespas[i]).filter(Boolean)),
       legendFired: !!data.legendFired,
+      dayOrders: data.dayOrders ?? 0,
+      vipDay: data.vipDay ?? 0,
+      vipVisits: new Map(data.vipVisits ?? []),
     });
     if (this.status === 'employed' && !this.job) this.status = 'unemployed';
   }
