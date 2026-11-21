@@ -49,6 +49,7 @@ import {
   nearestPizzeria,
   nearGarage,
   nearRepairShop,
+  onTalk,
   openGarage,
   openPizzeria,
   openRepairShop,
@@ -318,6 +319,8 @@ function update(dt) {
   updateFootballer(dt);
   updateVip(dt);
   updateMechanics(dt);
+  updatePizzaiolo(dt);
+  updateTalks(dt);
   updateLegend(dt);
   updateRumors(dt);
   player.shirt = career.blessed ? SHIRT_AZZURRA : SHIRT_RED;
@@ -460,7 +463,10 @@ const VIP_LINES = ['Uè, Gennà! Ccà!', "'E pizze toje so' 'e meglio!", 'Jamme,
 function updateVip(dt) {
   const current = vipOrder();
   if (!current) {
-    vip.order = null;
+    // Consegnate le pizze, il cliente resta a chiacchierare finché la conversazione non è finita.
+    if (vip.chatting) {
+      if (vip.sayT > 0) vip.sayT -= dt;
+    } else vip.order = null;
     return;
   }
   const { order, customer } = current;
@@ -473,7 +479,7 @@ function updateVip(dt) {
 }
 
 function drawVip() {
-  if (!vip.order || vipOrder()?.order !== vip.order || !isVisible(vip.x, vip.y)) return;
+  if (!vip.order || (!vip.chatting && vipOrder()?.order !== vip.order) || !isVisible(vip.x, vip.y)) return;
   const [sx, sy] = toScreen(vip.x, vip.y);
   const z = camera.zoom;
   ctx.globalAlpha = 0.3 + 0.12 * Math.sin(time.t * 3);
@@ -490,6 +496,83 @@ function drawVip() {
   ctx.textAlign = 'center';
   ctx.fillText('★', sx, sy - 14 * z - hop);
 }
+
+// Conversations in speech bubbles: one line at a time, paused while Gennaro is too far away to hear.
+const talks = [];
+const lineTime = (text) => Math.min(7, 2 + text.length * 0.06);
+
+function startTalk({ lines, canHear, giveUp = () => false, onEnd }) {
+  talks.push({ lines, i: 0, t: 0, canHear, giveUp, onEnd });
+}
+
+function updateTalks(dt) {
+  for (const c of [...talks]) {
+    if (c.t > 0) {
+      c.t -= dt;
+      continue;
+    }
+    if (c.i >= c.lines.length || c.giveUp()) {
+      talks.splice(talks.indexOf(c), 1);
+      c.onEnd?.();
+      continue;
+    }
+    if (!c.canHear()) continue;
+    const [who, text] = c.lines[c.i++];
+    const seconds = lineTime(text);
+    say(who, text, seconds);
+    c.t = seconds + 0.3;
+  }
+}
+
+// The pizzaiolo stands at the door of Gennaro's pizzeria; during the trial deliveries he explains the rules.
+const pizzaiolo = { shirt: '#f4f1ea', trousers: '#f4f1ea', hair: '#1e1410', skin: '#d8a47c', say: '', sayT: 0 };
+const HEAR_RANGE = 230;
+
+function updatePizzaiolo(dt) {
+  if (pizzaiolo.sayT > 0) pizzaiolo.sayT -= dt;
+  const shop = career.job?.pizzeria ?? pizzaiolo.shop;
+  if (shop) Object.assign(pizzaiolo, { shop, x: shop.pos[0] + 24, y: shop.pos[1] + 6 });
+}
+
+const pizzaioloVisible = () => !!pizzaiolo.shop && (career.job?.pizzeria === pizzaiolo.shop || isTalking(pizzaiolo));
+
+function drawPizzaiolo() {
+  if (!pizzaioloVisible() || !isVisible(pizzaiolo.x, pizzaiolo.y)) return;
+  const [sx, sy] = toScreen(pizzaiolo.x, pizzaiolo.y);
+  drawPerson(sx, sy, Math.atan2(player.y - pizzaiolo.y, player.x - pizzaiolo.x), pizzaiolo, 0, false);
+  // 'O cappiello bianco.
+  const z = camera.zoom;
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(sx, sy - 1 * z, 3.2 * z, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+onTalk(({ kind, lines, pizzeria, customer, address }) => {
+  if (kind === 'stage') {
+    pizzaiolo.shop = pizzeria;
+    updatePizzaiolo(0);
+    startTalk({
+      lines: lines.map((text) => [pizzaiolo, text]),
+      canHear: () => Math.hypot(player.x - pizzaiolo.x, player.y - pizzaiolo.y) < HEAR_RANGE,
+      giveUp: () => career.job?.pizzeria !== pizzeria, // licenziato o andato via: niente più lezioni
+    });
+  } else if (kind === 'vip') {
+    // Il cliente resta accanto al suo monumento finché non hanno finito di parlare.
+    Object.assign(vip, customer.look, { x: address.x + 12, y: address.y - 4, chatting: true, say: '', sayT: 0 });
+    vip.order ??= { chat: true };
+    const distance = () => Math.hypot(player.x - vip.x, player.y - vip.y);
+    startTalk({
+      lines: lines.map(([who, text]) => [who === 'g' ? player : vip, text]),
+      canHear: () => distance() < HEAR_RANGE + 60,
+      giveUp: () => distance() > 1200, // Gennaro se n'è andato: il cliente torna a casa
+      onEnd: () => {
+        vip.chatting = false;
+        vip.order = null;
+      },
+    });
+  }
+});
 
 // The two mechanics, standing at their shop doors. Each has something to say about the other.
 const mechanics = [
@@ -599,6 +682,7 @@ function drawWorld() {
   drawFootballer();
   drawVip();
   drawMechanics();
+  drawPizzaiolo();
   drawLegend();
   if (player.mode === 'foot') drawPerson(...toScreen(player.x, player.y), player.a, player, player.walk, player.moving);
   else if (player.mode === 'vespa') drawVespa(player.vespa, player, pizzasOnBoard());
@@ -622,6 +706,7 @@ function drawWorld() {
   if (footballerOrder() && isTalking(footballer)) drawBubble(footballer.x, footballer.y, footballer.say);
   if (vip.order && isTalking(vip)) drawBubble(vip.x, vip.y, vip.say);
   for (const m of mechanics) if (isTalking(m) && isVisible(m.x, m.y)) drawBubble(m.x, m.y, m.say);
+  if (pizzaioloVisible() && isTalking(pizzaiolo)) drawBubble(pizzaiolo.x, pizzaiolo.y, pizzaiolo.say);
   if (legendVisible() && isTalking(legend)) drawBubble(legend.x, legend.y, legend.say);
   if (isTalking(player)) drawBubble(player.x, player.y, player.say);
   if (game.started && isOnStreet()) drawGuide(player, next);

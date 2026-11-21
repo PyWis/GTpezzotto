@@ -75,6 +75,41 @@ export const career = new Career({
 });
 
 // ---------------------------------------------------------------------------
+// Conversations in speech bubbles (played by main.js, which owns the people)
+// ---------------------------------------------------------------------------
+let talkHandler = () => {};
+/** main.js tells us how to start a conversation: `fn({ kind, lines, ... })`. */
+export const onTalk = (fn) => (talkHandler = fn);
+
+/** What the pizzaiolo says during the trial deliveries: the rules, a bit at a time. */
+function stageLines(n) {
+  const pct = (v) => `${Math.round(v * 100)}%`;
+  const [minP, maxP] = RULES.pizzasPerOrder;
+  const [minT, maxT] = RULES.tipRange;
+  const lines = {
+    1: [
+      `Benvenuto, Gennà! 'E primme ${RULES.stage.orders} consegne so' 'e prova: nun te pago, ma t'imparo 'o mestiere.`,
+      "'E pizze se caricano sole sole quanno passe annanz' 'a porta.",
+      `Tiene ${clock(RULES.orderTime)} pe' purtà tutto. 'A freccia te mostra addò ià ì.`,
+      "Pe' consegnà, passa chiano chiano annanz' 'o portone d''o cliente.",
+    ],
+    2: [
+      `Ogni ordine so' ${minP}-${maxP} pizze pe' ${RULES.familiesPerOrder} famiglie, sparse pe' tutta Napule.`,
+      `Si sierve na famiglia dint' ${RULES.tipWindow} secondi, te lassa 'a mancia: ${pct(minT)}-${pct(maxT)}.`,
+      `E 'e ${RULES.tipWindow} secondi ripartono dopo ogni famiglia: nun perdere tiempo!`,
+      `Nu nuovo ordine ogni ${clock(RULES.orderInterval)}. Si turne primma a mani vacante, arriva subito.`,
+    ],
+    3: [
+      `Quanno faje overo: ${euro(RULES.basePay)} a ordine, cchiù 'o ${pct(RULES.commission)} d''e pizze, cchiù 'e mance.`,
+      `Ma ogni pizza ca perde, ${pct(RULES.firingChancePerPizza)} ca te caccio!`,
+      `Dopo ${RULES.schedule.maxOrders} ordine 'e clienti se so' magnate tutto: pe' chillo juorno è fernuto.`,
+      "Bravo, Gennà: 'a prova è fernuta. Dal prossimo ordine se pava!",
+    ],
+  };
+  return lines[n] ?? [];
+}
+
+// ---------------------------------------------------------------------------
 // Queries for the renderer
 // ---------------------------------------------------------------------------
 const STANDING_LOOK = {
@@ -243,7 +278,14 @@ export function openPizzeria(p) {
     case 'hiring':
       return show(
         html`<p>«Guagliò, ci serve proprio un fattorino!»</p>
-          ${raw(rulesText())}${raw(menuTable())}${raw(sideBody)}`,
+          ${raw(
+            career.stageLeft > 0
+              ? html`<p class="small">
+                  Le prime ${RULES.stage.orders} consegne sono di prova e non si pagano: il pizzaiolo ti spiega come
+                  funziona.
+                </p>`
+              : rulesText(),
+          )}${raw(menuTable())}${raw(sideBody)}`,
         [{ label: 'Fatti assumere', run: () => career.hire(p.id) }, ...sideButtons],
       );
     case 'notHiring':
@@ -385,7 +427,7 @@ const orderRows = (orders) =>
           <td>#${o.number}</td>
           <td>${o.pizzaCount} pizze</td>
           <td>${o.state === 'done' ? 'OK' : `-${o.missed}`}</td>
-          <td>${euro(o.pay.total)}</td>
+          <td>${o.stage ? 'prova' : euro(o.pay.total)}</td>
         </tr>`,
     )
     .join('');
@@ -441,18 +483,12 @@ function leftJobDialog({ type, pizzeria, rehireDay }) {
   });
 }
 
-/** Gennaro and the special customer have a chat: the first time is always different from the next ones. */
-function vipDialog(name, stop) {
+/** Gennaro and the special customer have a chat in speech bubbles: the first time is different from the next ones. */
+function vipChat(name, stop) {
   const c = vipData(name);
   if (!c) return;
-  const lines = stop.visit > 1 ? c.again : c.first;
-  const tip = stop.tip ? html`<p class="small">${name} ti lascia una mancia di ${euro(stop.tip)}.</p>` : '';
-  queueDialog({
-    title: `${name.toUpperCase()} · ${c.place.toUpperCase()}`,
-    color: VIP_COLOR,
-    body: lines.map(([who, text]) => html`<p><b>${who === 'g' ? 'Gennaro' : name}:</b> «${text}»</p>`).join('') + tip,
-    buttons: [{ label: 'Continua', cancel: true, badge: '↵' }],
-  });
+  talkHandler({ kind: 'vip', name, customer: c, address: stop.address, lines: stop.visit > 1 ? c.again : c.first });
+  if (stop.tip) toast(`${name} ti lascia una mancia di ${euro(stop.tip)}`, VIP_COLOR, 4);
 }
 
 function handleEvent(e) {
@@ -460,7 +496,13 @@ function handleEvent(e) {
     case 'hired':
       sfx.coins();
       showBanner('Assunto!');
-      toast(`Assunto da ${e.pizzeria.name}! Arriva il primo ordine`, '#39d46a', 5);
+      toast(
+        career.stageLeft > 0
+          ? `Assunto da ${e.pizzeria.name}! Prima ${RULES.stage.orders} consegne di prova: ascolta il pizzaiolo`
+          : `Assunto da ${e.pizzeria.name}! Arriva il primo ordine`,
+        '#39d46a',
+        5,
+      );
       break;
     case 'orderCreated': {
       const o = e.order;
@@ -495,6 +537,9 @@ function handleEvent(e) {
         );
       } else if (o.kind === OrderKind.SIDE) {
         toast(`Consegna extra per ${o.pizzeria.name}: ${o.pizzaCount} pizze, lontano!`, SIDE_COLOR, 4.5);
+      } else if (o.stage) {
+        toast(`Consegna di prova ${o.stage}/${RULES.stage.orders}: ${o.pizzaCount} pizze, non pagata`, STOP_COLOR, 4.5);
+        talkHandler({ kind: 'stage', pizzeria: o.pizzeria, lines: stageLines(o.stage) });
       } else {
         toast(
           `Nuovo ordine #${o.number}: ${o.pizzaCount} pizze, ${clock(RULES.orderTime)} per consegnarle!`,
@@ -583,7 +628,7 @@ function handleEvent(e) {
         break;
       }
       if (e.order.kind === OrderKind.VIP) {
-        vipDialog(e.order.vip, stop);
+        vipChat(e.order.vip, stop);
         break;
       }
       if (e.order.kind === OrderKind.LEGEND) {
@@ -615,6 +660,16 @@ function handleEvent(e) {
           sfx.failed();
           toast('Il calciatore è andato via senza pizza: niente bonus', '#ff5b4b', 4.5);
         }
+      } else if (e.order.stage) {
+        if (e.missed) sfx.failed();
+        else sfx.coins();
+        toast(
+          e.missed
+            ? `Prova ${e.order.stage}: ${plural(e.missed, 'pizza persa', 'pizze perse')}. Per stavolta niente guai`
+            : `Consegna di prova ${e.order.stage}/${RULES.stage.orders} completata!`,
+          e.missed ? '#ff5b4b' : '#ffd23f',
+          4,
+        );
       } else if (e.missed) {
         sfx.failed();
         toast(`Ordine #${e.order.number} scaduto: ${plural(e.missed, 'pizza persa', 'pizze perse')}`, '#ff5b4b', 4.5);
