@@ -94,9 +94,12 @@ export const RULES = Object.freeze({
     speed: 1.2, // la Vespa modificata va il 20% più veloce
   },
   wear: {
-    perBump: 0.001, // ogni urto la Vespa perde l'1% della sua velocità (si accumula)
+    perBump: 0.001, // ogni urto la Vespa perde lo 0,1% della sua velocità (si accumula)
     minCondition: 0.5, // più ammaccata di così non va: almeno metà della velocità
     bumpSpeed: 60, // px/s: sotto questa velocità non è un urto
+  },
+  stage: {
+    orders: 3, // le prime 3 consegne della partita sono di prova: il pizzaiolo spiega le regole, niente paga
   },
   repair: {
     costPerPoint: 3, // € per ogni punto percentuale di velocità da recuperare

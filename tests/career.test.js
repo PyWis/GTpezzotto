@@ -25,7 +25,7 @@ function makeCareer({ rng = seeded(1), rules = {}, addressCalls = [], blessed = 
     pizzerias,
     menu: MENU,
     surnames: SURNAMES,
-    rules: { ...RULES, ...rules },
+    rules: { ...RULES, stage: null, ...rules }, // lo stage ha i suoi test
     findAddress,
     stadium: STADIUM,
     vips,
@@ -335,7 +335,7 @@ test('consegna extra pagata il doppio di una normale, anche da disoccupato', () 
 // ------------------------------------------------------------------ footballer
 
 function footballerCareer(extra = {}) {
-  const rules = { ...RULES, footballer: { ...RULES.footballer, chance: 1 }, ...extra };
+  const rules = { ...RULES, stage: null, footballer: { ...RULES.footballer, chance: 1 }, ...extra };
   return makeCareer({ rules });
 }
 
@@ -540,7 +540,7 @@ test('servire il Dio del Calcio fa diventare Gennaro "benedetto"', () => {
 
 test('da benedetto ogni calciatore dà 10€ in più (oltre al bonus), e vale anche in una partita nuova', () => {
   for (const blessed of [false, true]) {
-    const rules = { ...RULES, footballer: { ...RULES.footballer, chance: 1 } };
+    const rules = { ...RULES, stage: null, footballer: { ...RULES.footballer, chance: 1 } };
     const { career } = makeCareer({ rules, blessed });
     const shop = hire(career);
     career.update(0.1, at(shop.pos));
@@ -717,4 +717,59 @@ test('tempi: 2 minuti e mezzo per consegnare, 40 secondi per la mancia, 10% di p
   assert.equal(RULES.orderTime, 150);
   assert.equal(RULES.tipWindow, 40);
   assert.equal(RULES.commission, 0.1);
+});
+
+// ------------------------------------------------------------------ stage
+
+test('stage: le prime 3 consegne sono di prova, niente paga né mance, poi si viene pagati', () => {
+  const { career, events } = makeCareer({ rng: seeded(5), rules: { stage: RULES.stage, livingCost: [0, 0] } });
+  const shop = hire(career);
+  assert.ok(career.onStage);
+  for (let k = 1; k <= 3; k++) {
+    career.update(1, at(shop.pos)); // arriva l'ordine e si carica
+    if (!career.activeOrders.length) wait(career, RULES.orderInterval, at(shop.pos));
+    const order = career.activeOrders[0];
+    assert.equal(order.stage, k);
+    career.update(0, at(shop.pos));
+    deliverAll(career, order); // subito: senza lo stage ci sarebbe la mancia
+    assert.equal(order.state, 'done');
+    assert.equal(order.pay.total, 0);
+    assert.ok(order.stops.every((s) => s.tip === 0));
+  }
+  assert.equal(career.onStage, false);
+  assert.equal(career.wallet, 0);
+  wait(career, RULES.orderInterval, at(shop.pos));
+  const paid = career.activeOrders[0];
+  assert.equal(paid.stage, undefined);
+  deliverAll(career, paid);
+  assert.ok(paid.pay.total >= RULES.basePay);
+  assert.ok(ofType(events, 'orderCreated').length >= 4);
+});
+
+test('stage: le pizze perse in prova non fanno licenziare', () => {
+  const { career } = makeCareer({
+    rng: seeded(9),
+    rules: { stage: RULES.stage, firingChancePerPizza: 1, livingCost: [0, 0] },
+  });
+  const shop = hire(career);
+  career.update(1, at(shop.pos));
+  wait(career, RULES.orderTime + 1);
+  assert.equal(career.ledger.orders[0].state, 'failed');
+  assert.equal(career.status, 'employed');
+});
+
+test('stage: si fa una volta sola per partita e sopravvive al salvataggio', () => {
+  const { career } = makeCareer({ rng: seeded(3), rules: { stage: RULES.stage, livingCost: [0, 0] } });
+  hire(career);
+  career.update(1, far);
+  assert.equal(career.stageLeft, 2);
+  const copy = makeCareer({ rng: seeded(3), rules: { stage: RULES.stage } }).career;
+  copy.restore(JSON.parse(JSON.stringify(career.serialize())));
+  assert.equal(copy.stageLeft, 2);
+  assert.equal(copy.activeOrders[0].stage, 1);
+  // Un salvataggio di prima dello stage non lo rifà.
+  const old = career.serialize();
+  delete old.stageLeft;
+  copy.restore(old);
+  assert.equal(copy.stageLeft, 0);
 });

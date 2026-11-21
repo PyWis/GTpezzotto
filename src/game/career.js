@@ -87,6 +87,7 @@ export class Career {
     this.soldOutDay = 0; // il giorno in cui la pizzeria ha finito tutto (già annunciato)
     this.vipDay = 0; // l'ultimo giorno in cui ha chiamato un cliente speciale (uno al giorno)
     this.vipVisits = new Map(); // cliente speciale → quante volte Gennaro gli ha portato le pizze
+    this.stageLeft = rules.stage?.orders ?? 0; // le prime consegne della partita sono di prova (non pagate)
     this.ledger = emptyLedger(1); // conti della giornata in corso
     this.rollOpenings();
   }
@@ -231,6 +232,7 @@ export class Career {
   /** Next order from the employer: usually a normal one, once in a while a special customer or the footballer. */
   createOrder() {
     const { rules, rng, job } = this;
+    if (this.stageLeft > 0) return this.createStageOrder();
     const forced = this.scheduledKind();
     const vip = forced ? (forced === OrderKind.VIP ? this.nextVip() : null) : this.rollVip();
     const footballer = forced ? forced === OrderKind.FOOTBALLER : !vip && rng() < rules.footballer.chance;
@@ -265,11 +267,36 @@ export class Career {
         time: rules.orderTime,
       });
     }
-    job.nextOrderAt = this.time + rules.orderInterval;
+    return this.postOrder(order);
+  }
+
+  postOrder(order) {
+    const { job } = this;
+    job.nextOrderAt = this.time + this.rules.orderInterval;
     job.earlyOrder = false;
     this.dayOrders++;
     this.emit('orderCreated', { order });
     return order;
+  }
+
+  /** Stage: an ordinary order, but unpaid. The pizzaiolo explains the rules a bit at a time. */
+  createStageOrder() {
+    const { rules, rng, job } = this;
+    const total = randInt(...rules.pizzasPerOrder, rng);
+    const order = this.addOrder({
+      kind: OrderKind.REGULAR,
+      pizzeria: job.pizzeria,
+      counts: splitPizzas(total, rules.familiesPerOrder, rules.maxPizzasPerFamily, rng),
+      time: rules.orderTime,
+    });
+    order.stage = rules.stage.orders - this.stageLeft + 1; // 1, 2, 3
+    this.stageLeft--;
+    return this.postOrder(order);
+  }
+
+  /** Still doing the unpaid trial deliveries (orders in progress included)? */
+  get onStage() {
+    return this.stageLeft > 0 || this.activeOrders.some((o) => o.stage);
   }
 
   // ---------------------------------------------------------------- daily schedule
@@ -458,6 +485,8 @@ export class Career {
       stop.tip = this.rules.legend.tip; // il Dio del Calcio lascia sempre la sua mancia
     } else if (order.kind === OrderKind.FOOTBALLER) {
       stop.tip = this.blessed ? this.rules.footballer.blessedTip : 0;
+    } else if (order.stage) {
+      stop.tip = 0; // in prova niente mance
     } else if (this.tipTimeLeft(order) > 0) {
       stop.tip = round2(orderValue(stop) * randRange(...this.rules.tipRange, this.rng));
     }
@@ -480,7 +509,8 @@ export class Career {
     const { rules, ledger } = this;
     const delivered = order.stops.filter((x) => x.delivered);
     const missed = sum(order.stops, (x) => (x.delivered ? 0 : x.pizzas.length));
-    const free = order.kind === OrderKind.FOOTBALLER; // al calciatore la pizza la offre la casa
+    // Al calciatore la pizza la offre la casa; le consegne di prova non si pagano.
+    const free = order.kind === OrderKind.FOOTBALLER || !!order.stage;
     const pay = {
       base: delivered.length && !free ? rules.basePay : 0, // il fisso solo se hai consegnato qualcosa
       commission: free ? 0 : round2(rules.commission * sum(delivered, orderValue)),
@@ -502,7 +532,7 @@ export class Career {
     this.wallet = round2(this.wallet + pay.total);
     this.emit('orderClosed', { order, pay, missed });
 
-    if (free && !missed) {
+    if (order.kind === OrderKind.FOOTBALLER && !missed) {
       // Il calciatore ringrazia: per i prossimi 2 giorni si guadagna il 20% in più (si accumula).
       const until = (this.day + rules.footballer.bonusDays) * rules.dayLength;
       this.boosts.push({ until });
@@ -510,7 +540,7 @@ export class Career {
     }
 
     // Un lavoretto per un'altra pizzeria: chi ti ha assunto non ti licenzia per quello.
-    if (judged && missed && isJobOrder(order) && order.pizzeria.id === this.employer) {
+    if (judged && missed && !order.stage && isJobOrder(order) && order.pizzeria.id === this.employer) {
       let fired = false;
       for (let k = 0; k < missed && !fired; k++) fired = this.rng() < rules.firingChancePerPizza;
       if (fired) this.leaveJob('fired');
@@ -590,6 +620,7 @@ export class Career {
       footballerDay: this.footballerDay,
       soldOutDay: this.soldOutDay,
       vipVisits: [...this.vipVisits],
+      stageLeft: this.stageLeft,
     };
   }
 
@@ -621,6 +652,7 @@ export class Career {
       footballerDay: data.footballerDay ?? 0,
       soldOutDay: data.soldOutDay ?? 0,
       vipVisits: new Map(data.vipVisits ?? []),
+      stageLeft: data.stageLeft ?? 0, // i salvataggi di prima dello stage non lo rifanno
     });
     if (this.status === 'employed' && !this.job) this.status = 'unemployed';
   }

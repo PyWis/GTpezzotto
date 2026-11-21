@@ -12,6 +12,9 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
   chiedere (tasto E alla porta).
 - Chi lascia una pizzeria (o viene licenziato) non può essere riassunto lì per **10 giorni**; dopo, quella pizzeria
   potrebbe tornare a cercarlo.
+- **Stage**: le prime **3 consegne** della partita sono di prova. Non sono pagate (niente fisso, percentuale né
+  mance) e le pizze perse non fanno licenziare. Intanto il pizzaiolo, davanti alla porta, spiega le regole a fumetti,
+  un pezzo per ogni consegna; se Gennaro si allontana, riprende quando torna. Lo stage si fa una volta sola per partita.
 - Appena assunto arriva il primo ordine; poi ne arriva uno ogni **2 minuti e mezzo**. Se Gennaro ha finito le consegne
   e torna in pizzeria prima, il nuovo ordine arriva dopo **5-15 secondi**.
 - Ogni ordine ha **da 3 a 7 pizze**, divise fra **tre famiglie** (massimo 4 pizze a famiglia) che abitano in palazzi a
@@ -49,11 +52,12 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
     **20%** di essere un cliente speciale; negli **ultimi 5 minuti** della giornata il **60%**. **Uno solo al giorno.**
   - La prima è sempre **Lucia**, che spiega a Gennaro che in città ci sono clienti che vogliono solo lui.
   - Dal ritiro ci sono **80 secondi** per consegnare; **30 secondi** dopo il ritiro arriva già l'ordine successivo.
-  - A ogni consegna c'è un **dialogo** fra Gennaro e il cliente: uno per il primo incontro, uno per le volte dopo.
+  - A ogni consegna Gennaro e il cliente **chiacchierano a fumetti**, senza fermare il gioco: un dialogo per il
+    primo incontro, uno per le volte dopo. Il cliente resta accanto al monumento finché non hanno finito.
     Paga e mance come un ordine normale; le pizze perse contano per il licenziamento.
 - **Officina 'O Turbo** (Fuorigrotta, Via Leopardi): portaci la Vespa e per **1000 €** la modificano; quella Vespa va il
   **20% più veloce**.
-- **Vespa ammaccata**: ogni urto (contro un muro o un'auto) la rallenta dell'**1%**, fino a un minimo del 50%. La si
+- **Vespa ammaccata**: ogni urto (contro un muro o un'auto) la rallenta dello **0,1%**, fino a un minimo del 50%. La si
   ripara solo all'**Officina Don Peppe in Via Gianturco**, per **3 € a punto** perso. I due meccanici non si sopportano:
   quello di Gianturco giura di fare solo cose pulite e che l'altro prima o poi ti fa finire a **Poggioreale** (c'è il
   carcere, in fondo a Via Poggioreale); quello di Fuorigrotta dice che a dare retta a Gianturco i napoletani mangiano le
@@ -103,7 +107,7 @@ e apri `http://localhost:8080`. Funziona così com'è anche su GitHub Pages.
 npm test
 ```
 
-I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, i clienti speciali, l'officina, la riparazione, la missione segreta, il salvataggio, spese giornaliere e game over.
+I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, lo stage, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, i clienti speciali, l'officina, la riparazione, la missione segreta, il salvataggio, spese giornaliere e game over.
 
 ## La città
 
