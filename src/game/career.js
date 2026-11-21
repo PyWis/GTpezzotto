@@ -83,6 +83,8 @@ export class Career {
     this.tunedVespas = new Set(); // Vespe modificate in officina
     this.legendFired = false; // la missione segreta arriva una volta sola
     this.dayOrders = 0; // ordini del datore di lavoro arrivati oggi
+    this.footballerDay = 0; // l'ultimo giorno in cui è arrivato il calciatore
+    this.soldOutDay = 0; // il giorno in cui la pizzeria ha finito tutto (già annunciato)
     this.vipDay = 0; // l'ultimo giorno in cui ha chiamato un cliente speciale (uno al giorno)
     this.vipVisits = new Map(); // cliente speciale → quante volte Gennaro gli ha portato le pizze
     this.ledger = emptyLedger(1); // conti della giornata in corso
@@ -229,8 +231,9 @@ export class Career {
   /** Next order from the employer: usually a normal one, once in a while a special customer or the footballer. */
   createOrder() {
     const { rules, rng, job } = this;
-    const vip = this.rollVip();
-    const footballer = !vip && rng() < rules.footballer.chance;
+    const forced = this.scheduledKind();
+    const vip = forced ? (forced === OrderKind.VIP ? this.nextVip() : null) : this.rollVip();
+    const footballer = forced ? forced === OrderKind.FOOTBALLER : !vip && rng() < rules.footballer.chance;
     let order;
     if (vip) {
       order = this.addOrder({
@@ -252,6 +255,7 @@ export class Career {
         families: [rules.footballer.name],
         addressOptions: { maxDist: rules.footballer.maxDistance },
       });
+      this.footballerDay = this.day;
     } else {
       const total = randInt(...rules.pizzasPerOrder, rng);
       order = this.addOrder({
@@ -268,11 +272,42 @@ export class Career {
     return order;
   }
 
+  // ---------------------------------------------------------------- daily schedule
+  /** Can today's special customer still call? (Never on day 1, once a day.) */
+  get vipAvailable() {
+    const v = this.rules.vip;
+    return !!v && this.vips.length > 0 && this.day >= v.fromDay && this.vipDay !== this.day;
+  }
+
+  /**
+   * The 11th order of the day is the footballer's (if he hasn't come yet today), otherwise the special
+   * customer's; the 12th is the special customer's if they haven't called yet. Null: left to chance.
+   */
+  scheduledKind() {
+    const s = this.rules.schedule;
+    if (!s) return null;
+    const n = this.dayOrders + 1;
+    if (n === s.footballerAt && this.footballerDay !== this.day) return OrderKind.FOOTBALLER;
+    if (s.vipBy.includes(n)) return this.vipAvailable ? OrderKind.VIP : OrderKind.REGULAR;
+    return null;
+  }
+
+  /** After the last order of the day the customers have eaten everything: no more orders until tomorrow. */
+  get soldOut() {
+    const max = this.rules.schedule?.maxOrders;
+    return !!max && this.status === 'employed' && this.dayOrders >= max;
+  }
+
+  /** The pizzaiolo has announced that everything is gone: until tomorrow, extra deliveries elsewhere. */
+  get closedToday() {
+    return this.soldOut && this.soldOutDay === this.day;
+  }
+
   // ---------------------------------------------------------------- special customers
   /** Chance that the next order is a special customer: 0 on day 1, once one has called today, or before the 4th order. */
   get vipChance() {
     const v = this.rules.vip;
-    if (!v || !this.vips.length || this.day < v.fromDay || this.vipDay === this.day) return 0;
+    if (!this.vipAvailable) return 0;
     if (this.dayTimeLeft <= v.lateWindow) return v.lateChance;
     return this.dayOrders >= v.afterOrders ? v.chance : 0;
   }
@@ -307,7 +342,9 @@ export class Career {
   askSideJob(id) {
     if (!this.canAskSideJob(id)) return false;
     this.sideAsked.set(id, this.time);
-    return this.rng() < this.rules.sideJob.chance;
+    // A pizzeria chiusa per oggi, le altre pizzerie hanno sempre qualcosa da consegnare.
+    const chance = this.closedToday ? this.rules.schedule.sideJobChance : this.rules.sideJob.chance;
+    return this.rng() < chance;
   }
 
   /** He takes the job: the pizzas are handed over at the counter, right now. */
@@ -489,7 +526,7 @@ export class Career {
     if (this.status === 'broke') return;
 
     const job = this.job;
-    if (job && this.time >= job.nextOrderAt) this.createOrder();
+    if (job && !this.soldOut && this.time >= job.nextOrderAt) this.createOrder();
     this.maybeStartLegend();
 
     const near = ([x, y], range) => Math.hypot(courier.x - x, courier.y - y) < range;
@@ -506,10 +543,18 @@ export class Career {
       if (order.state === 'open' && this.time >= order.deadline) this.closeOrder(order);
     }
 
-    // Tornato in pizzeria a mani vuote prima del prossimo ordine? Ne arriva uno a breve.
     if (!job || this.job !== job) return;
-    const [, maxDelay] = this.rules.earlyOrderDelay;
     const ownOrders = this.activeOrders.filter(isJobOrder);
+    // Consegnati gli ultimi ordini: il pizzaiolo annuncia che per oggi è finito tutto.
+    if (this.soldOut) {
+      if (!ownOrders.length && this.soldOutDay !== this.day) {
+        this.soldOutDay = this.day;
+        this.emit('soldOut', { pizzeria: job.pizzeria });
+      }
+      return;
+    }
+    // Tornato in pizzeria a mani vuote prima del prossimo ordine? Ne arriva uno a breve.
+    const [, maxDelay] = this.rules.earlyOrderDelay;
     if (near(job.pizzeria.pos, PICKUP_RANGE) && !ownOrders.length && job.nextOrderAt > this.time + maxDelay) {
       job.nextOrderAt = this.time + randRange(...this.rules.earlyOrderDelay, this.rng);
       job.earlyOrder = true;
@@ -542,6 +587,8 @@ export class Career {
       legendFired: this.legendFired,
       dayOrders: this.dayOrders,
       vipDay: this.vipDay,
+      footballerDay: this.footballerDay,
+      soldOutDay: this.soldOutDay,
       vipVisits: [...this.vipVisits],
     };
   }
@@ -571,6 +618,8 @@ export class Career {
       legendFired: !!data.legendFired,
       dayOrders: data.dayOrders ?? 0,
       vipDay: data.vipDay ?? 0,
+      footballerDay: data.footballerDay ?? 0,
+      soldOutDay: data.soldOutDay ?? 0,
       vipVisits: new Map(data.vipVisits ?? []),
     });
     if (this.status === 'employed' && !this.job) this.status = 'unemployed';

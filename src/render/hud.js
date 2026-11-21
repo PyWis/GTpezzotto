@@ -96,7 +96,10 @@ function panelLines(career, player) {
     add(career.job.pizzeria.name.toUpperCase(), '#6fdc8c');
     const next = career.nextOrderIn;
     const own = career.activeOrders.filter((o) => o.kind !== 'side');
-    if (!own.length) add(`Prossimo ordine tra ${clock(next)}: torna in pizzeria!`, '#cfc6b0');
+    if (career.soldOut) {
+      if (career.closedToday) add('Finito tutto! Consegne extra nelle altre pizzerie (E)', '#ff9f40');
+      else add('Ultimi ordini del giorno: poi si chiude', '#cfc6b0');
+    } else if (!own.length) add(`Prossimo ordine tra ${clock(next)}: torna in pizzeria!`, '#cfc6b0');
     else if (next > 0) add(`Prossimo ordine tra ${clock(next)}`, '#cfc6b0');
   }
 
