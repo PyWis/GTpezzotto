@@ -18,7 +18,7 @@ export const PIZZERIAS = [
   { id: 'scugnizzo', name: "'O Scugnizzo", color: '#2f8f4e', at: [171, 49] },
   { id: 'collina', name: 'Pizzeria La Collina', color: '#7b4fb0', at: [125, 27] },
   { id: 'stadio', name: "Pizzeria 'O Stadio", color: '#2f7fd0', at: [60, 63] },
-  { id: 'Garibaldi', name: "Pizzeria Garibaldi", color: '#e07b1a', at: [242, 66] },
+  { id: 'Garibaldi', name: 'Pizzeria Garibaldi', color: '#e07b1a', at: [242, 66] },
 ];
 
 export const SURNAMES = [
@@ -53,19 +53,25 @@ export const RULES = Object.freeze({
   dayLength: 20 * 60, // una giornata
   orderInterval: 150, // ogni 2 minuti e mezzo parte una nuova consegna…
   earlyOrderDelay: [5, 15], // …ma se torni in pizzeria a mani vuote ne arriva una dopo 5-15 s
-  orderTime: 180, // 3 minuti per consegnare tutto
-  tipWindow: 60, // la famiglia servita entro un minuto (dal ritiro o dalla consegna precedente) lascia la mancia…
+  orderTime: 150, // 2 minuti e mezzo per consegnare tutto
+  tipWindow: 40, // la famiglia servita entro 40 secondi (dal ritiro o dalla consegna precedente) lascia la mancia…
   tipRange: [0.05, 0.2], // …dal 5% al 20% della sua parte d'ordine
   pizzasPerOrder: [3, 7],
   familiesPerOrder: 3,
   maxPizzasPerFamily: 4,
   firingChancePerPizza: 0.05, // per ogni pizza non consegnata
   basePay: 10, // € per ogni consegna con almeno una famiglia servita
-  commission: 0.2, // 20% del valore consegnato
+  commission: 0.1, // 10% del valore consegnato
   openings: 2, // pizzerie che assumono (segreto finché non chiedi)
   rehireAfterDays: 10, // dopo che te ne vai, quella pizzeria potrebbe riprenderti
   livingCost: [100, 200], // € al giorno per vivere
   maxDaysInRed: 3, // giorni di fila sotto zero prima del game over
+  schedule: {
+    footballerAt: 11, // l'11° ordine del giorno è del calciatore (se oggi non è ancora venuto)…
+    vipBy: [11, 12], // …o del cliente speciale: l'11° o il 12° ordine, se oggi non ha ancora chiamato
+    maxOrders: 12, // dopo 12 ordini i clienti si sono mangiati tutto: la pizzeria chiude per oggi…
+    sideJobChance: 1, // …e le altre pizzerie hanno sempre una consegna extra, fino a fine giornata
+  },
   sideJob: {
     chance: 0.25, // un'altra pizzeria ha una consegna da affidarti
     cooldown: 150, // s prima di poter richiedere alla stessa pizzeria

@@ -124,8 +124,14 @@ export const pizzasOnBoard = () => pendingStops().reduce((n, { stop }) => n + st
 const worthAsking = (p) => ['unknown', 'hiring'].includes(career.standingWith(p.id));
 
 /** Employed and with pizzas waiting at the counter (or nothing to do: go back for the next order). */
-const needsShop = () =>
-  career.status === 'employed' && (!pendingStops().length || career.activeOrders.some((o) => !o.pickedUp));
+function needsShop() {
+  if (career.status !== 'employed') return false;
+  if (career.activeOrders.some((o) => !o.pickedUp)) return true;
+  return !career.soldOut && !pendingStops().length; // a pizzeria chiusa non c'è niente da ritirare
+}
+
+/** Sold out for today: the other pizzerias always have an extra delivery (one at a time). */
+const extraWanted = (p) => career.closedToday && career.canAskSideJob(p.id);
 
 /** Where to go now: the nearest customer door, the pizzeria, or the next pizzeria to ask for a job. */
 export function currentObjective(player) {
@@ -140,6 +146,8 @@ export function currentObjective(player) {
   for (const o of career.activeOrders)
     if (!o.pickedUp && o.pizzeria !== shop)
       targets.push({ x: o.pizzeria.pos[0], y: o.pizzeria.pos[1], color: stopColor(o) });
+  if (!pendingStops().length)
+    for (const p of PIZZERIAS.filter(extraWanted)) targets.push({ x: p.pos[0], y: p.pos[1], color: SIDE_COLOR });
   if (career.status === 'unemployed')
     for (const p of PIZZERIAS.filter(worthAsking)) targets.push({ x: p.pos[0], y: p.pos[1], color: '#ffd23f' });
   let best = null;
@@ -157,7 +165,10 @@ export function jobMarkers(t) {
     const standing = career.standingWith(p.id);
     const pickup = career.activeOrders.some((o) => !o.pickedUp && o.pizzeria === p);
     const wanted =
-      (career.status === 'unemployed' && worthAsking(p)) || (standing === 'employer' && needsShop()) || pickup;
+      (career.status === 'unemployed' && worthAsking(p)) ||
+      (standing === 'employer' && needsShop()) ||
+      pickup ||
+      extraWanted(p);
     return {
       kind: 'pizzeria',
       x: p.pos[0],
@@ -200,7 +211,8 @@ const rulesText = () =>
     Ogni ${clock(RULES.orderInterval)} parte un ordine da 3 a 7 pizze per tre famiglie (se torni qui a mani vuote prima,
     ne arriva uno in pochi secondi): hai ${clock(RULES.orderTime)} per ritirarle e consegnarle. Paga:
     ${euro(RULES.basePay)} a consegna se servi almeno una famiglia + ${RULES.commission * 100}% del valore consegnato +
-    mance (5-20%) per ogni famiglia servita entro un minuto dal ritiro o dalla consegna precedente. Ogni pizza persa:
+    mance (5-20%) per ogni famiglia servita entro ${RULES.tipWindow} secondi dal ritiro o dalla consegna precedente.
+    Dopo ${RULES.schedule.maxOrders} ordini per oggi si chiude. Ogni pizza persa:
     ${Math.round(RULES.firingChancePerPizza * 100)}% di rischio licenziamento.
   </p>`;
 
@@ -275,11 +287,13 @@ export function openPizzeria(p) {
       };
       const waiting = career.activeOrders.filter((o) => !o.pickedUp).length;
       const next = career.nextOrderIn;
-      const status = waiting
-        ? `Hai ${plural(waiting, 'ordine', 'ordini')} da ritirare: le pizze si caricano da sole quando passi davanti alla porta.`
-        : career.activeOrders.length
-          ? 'Tutti gli ordini sono in consegna.'
-          : `Il prossimo ordine arriva tra ${clock(next)}.`;
+      const status = career.closedToday
+        ? "«'E clienti se so' magnate tutto! Pe' oggi è fernuto.» Le altre pizzerie hanno consegne extra per te."
+        : waiting
+          ? `Hai ${plural(waiting, 'ordine', 'ordini')} da ritirare: le pizze si caricano da sole quando passi davanti alla porta.`
+          : career.activeOrders.length || career.soldOut
+            ? 'Tutti gli ordini sono in consegna.'
+            : `Il prossimo ordine arriva tra ${clock(next)}.`;
       return show(
         html`<p>«Jamme, Gennà, 'e pizze se fanno fredde!»</p>
           <p class="small">${status}</p>`,
@@ -527,6 +541,22 @@ function handleEvent(e) {
       sfx.coins();
       showBanner('Vespa riparata!', 3);
       toast(`Spesi ${euro(e.cost)}: la Vespa è tornata come nuova`, REPAIR_SHOP.color, 4.5);
+      break;
+    case 'soldOut':
+      sfx.coins();
+      showBanner('Finito tutto!', 4);
+      queueDialog({
+        title: e.pizzeria.name.toUpperCase(),
+        color: e.pizzeria.color,
+        body: html`<p>
+            «Gennà, 'e clienti se so' magnate tutto! Nun è rimasto manco nu poco 'e pasta: pe' oggi avimmo fernuto.»
+          </p>
+          <p class="small">
+            Domani si ricomincia. Fino a fine giornata le altre pizzerie hanno sempre una consegna extra da affidarti:
+            passa da loro e chiedi (E).
+          </p>`,
+        buttons: [{ label: 'Jamme!', cancel: true, badge: '↵' }],
+      });
       break;
     case 'earlyOrder':
       toast(`Sei tornato presto: nuovo ordine tra ${Math.ceil(e.in)} secondi`, '#fff', 4);

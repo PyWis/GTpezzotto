@@ -171,7 +171,7 @@ test('senza ritiro in pizzeria non si consegna, e bisogna rallentare', () => {
 
 // ------------------------------------------------------------------ money
 
-test('paga: 10€ + 20% del consegnato + mance entro il primo minuto', () => {
+test('paga: 10€ + 10% del consegnato + mance entro 40 secondi', () => {
   const { career } = makeCareer();
   const shop = hire(career);
   career.update(0.1, at(shop.pos));
@@ -186,33 +186,33 @@ test('paga: 10€ + 20% del consegnato + mance entro il primo minuto', () => {
     assert.ok(s.tip >= v * 0.05 - 0.01 && s.tip <= v * 0.2 + 0.01, `mancia ${s.tip} su ${v}`);
   }
   assert.equal(order.pay.base, 10);
-  assert.ok(Math.abs(order.pay.commission - value * 0.2) < 0.01);
-  assert.ok(Math.abs(order.pay.total - (10 + value * 0.2 + tips)) < 0.02);
+  assert.ok(Math.abs(order.pay.commission - value * 0.1) < 0.01);
+  assert.ok(Math.abs(order.pay.total - (10 + value * 0.1 + tips)) < 0.02);
   assert.equal(career.wallet, order.pay.total);
 });
 
-test('la mancia si calcola su ogni singola consegna: il minuto riparte dopo ogni famiglia', () => {
+test('la mancia si calcola su ogni singola consegna: i 40 secondi ripartono dopo ogni famiglia', () => {
   const { career } = makeCareer({ rules: { pizzasPerOrder: [3, 3] } });
   const shop = hire(career);
   career.update(0.1, at(shop.pos));
   const [order] = career.activeOrders;
   const [a, b, c] = order.stops;
-  career.update(50, far);
-  career.update(1, at([a.address.x, a.address.y])); // 51 s dal ritiro
-  career.update(50, far);
-  career.update(1, at([b.address.x, b.address.y])); // 51 s dalla prima, 102 s dal ritiro
-  career.update(65, far);
-  career.update(1, at([c.address.x, c.address.y])); // 66 s dalla seconda
+  career.update(35, far);
+  career.update(1, at([a.address.x, a.address.y])); // 36 s dal ritiro
+  career.update(35, far);
+  career.update(1, at([b.address.x, b.address.y])); // 36 s dalla prima, 72 s dal ritiro
+  career.update(45, far);
+  career.update(1, at([c.address.x, c.address.y])); // 46 s dalla seconda
   assert.ok(a.tip > 0 && b.tip > 0, 'mancia per le prime due famiglie');
-  assert.equal(c.tip, 0, 'la terza è arrivata dopo più di un minuto');
+  assert.equal(c.tip, 0, 'la terza è arrivata dopo più di 40 secondi');
   assert.equal(order.state, 'done');
 });
 
-test('niente mancia dopo il primo minuto', () => {
+test('niente mancia dopo 40 secondi', () => {
   const { career } = makeCareer();
   const shop = hire(career);
   career.update(0.1, at(shop.pos));
-  career.update(61, at(shop.pos));
+  career.update(41, at(shop.pos));
   const [order] = career.activeOrders;
   const stop = order.stops[0];
   career.update(1, at([stop.address.x, stop.address.y]));
@@ -328,7 +328,7 @@ test('consegna extra pagata il doppio di una normale, anche da disoccupato', () 
   career.update(1, at([stop.address.x, stop.address.y]));
   assert.equal(order.state, 'done');
   assert.ok(stop.tip > 0);
-  assert.ok(Math.abs(order.pay.total - 2 * (10 + orderValue(stop) * 0.2 + stop.tip)) < 0.02);
+  assert.ok(Math.abs(order.pay.total - 2 * (10 + orderValue(stop) * 0.1 + stop.tip)) < 0.02);
   assert.equal(career.status, 'unemployed');
 });
 
@@ -463,7 +463,7 @@ test('missione segreta: giorno 10, dopo 10 minuti, una pizza per il Dio del Calc
   career.update(1, at([STADIUM.x, STADIUM.y]));
   assert.equal(order.state, 'done');
   assert.equal(order.stops[0].tip, 115, 'mancia extra di 115€');
-  assert.ok(Math.abs(order.pay.total - (10 + orderValue(order.stops[0]) * 0.2 + 115)) < 0.02);
+  assert.ok(Math.abs(order.pay.total - (10 + orderValue(order.stops[0]) * 0.1 + 115)) < 0.02);
 
   wait(career, RULES.dayLength, far);
   assert.equal(career.orders.filter((o) => o.kind === 'legend').length, 0, 'una volta sola');
@@ -642,4 +642,79 @@ test('special customers: missed in 80 s', () => {
   assert.equal(order.state, 'failed');
   assert.equal(order.missed, 7);
   assert.equal(career.vipVisits.get('Lucia'), undefined);
+});
+
+// ------------------------------------------------------------------ 11°, 12° ordine e chiusura
+/** Gennaro at work on `day`, dice that never pick a footballer or a special customer by chance. */
+function workDay(day, setup = () => {}) {
+  const { career, events } = makeCareer({ rng: () => 0.99, vips: VIPS, rules: { firingChancePerPizza: 0 } });
+  career.time = (day - 1) * DAY;
+  career.update(0, far);
+  const shop = hire(career);
+  setup(career);
+  /** Calls the next order now and returns it (or null if none came). */
+  const next = () => {
+    const before = career.ordersCreated;
+    career.job.nextOrderAt = career.time;
+    career.update(0, far);
+    return career.ordersCreated > before ? career.orders.at(-1) : null;
+  };
+  return { career, events, shop, next };
+}
+
+test('11° ordine: il calciatore; 12°: il cliente speciale; poi la pizzeria ha finito tutto', () => {
+  const { career, events, shop, next } = workDay(2);
+  const kinds = Array.from({ length: 12 }, () => next().kind);
+  assert.ok(kinds.slice(0, 10).every((k) => k === 'regular'));
+  assert.equal(kinds[10], 'footballer');
+  assert.equal(kinds[11], 'vip');
+  assert.equal(career.orders.at(-1).vip, 'Lucia');
+  assert.ok(career.soldOut);
+  assert.equal(next(), null, 'dopo 12 ordini non ne arrivano altri');
+
+  // Finché ci sono pizze in giro non si annuncia niente; poi il pizzaiolo dice che è finito tutto, una volta.
+  assert.equal(ofType(events, 'soldOut').length, 0);
+  for (const o of career.activeOrders) {
+    career.update(0, at(shop.pos));
+    deliverAll(career, o);
+  }
+  career.update(1, at(shop.pos));
+  career.update(1, at(shop.pos));
+  assert.equal(ofType(events, 'soldOut').length, 1);
+  assert.ok(career.closedToday);
+  assert.equal(next(), null);
+
+  // Le altre pizzerie hanno sempre una consegna extra (anche con dadi sfortunati).
+  const other = career.pizzerias.find((p) => p.id !== career.employer);
+  assert.equal(career.askSideJob(other.id), true);
+
+  // Il giorno dopo si ricomincia.
+  wait(career, career.dayTimeLeft + 1);
+  assert.ok(!career.soldOut);
+  assert.equal(career.askSideJob(career.pizzerias.find((p) => p.id !== career.employer && p !== other).id), false);
+});
+
+test('11° ordine: il cliente speciale se il calciatore è già venuto; 12°: una famiglia normale', () => {
+  const { career, next } = workDay(3, (c) => (c.footballerDay = c.day));
+  const kinds = Array.from({ length: 12 }, () => next().kind);
+  assert.deepEqual(kinds.slice(10), ['vip', 'regular']);
+});
+
+test('11° e 12° ordine normali se calciatore e cliente speciale sono già passati', () => {
+  const { career, next } = workDay(3, (c) => Object.assign(c, { footballerDay: c.day, vipDay: c.day }));
+  const kinds = Array.from({ length: 12 }, () => next().kind);
+  assert.ok(kinds.every((k) => k === 'regular'));
+  assert.equal(next(), null);
+});
+
+test('il primo giorno niente cliente speciale: 11° calciatore, 12° normale', () => {
+  const { next } = workDay(1);
+  const kinds = Array.from({ length: 12 }, () => next().kind);
+  assert.deepEqual(kinds.slice(10), ['footballer', 'regular']);
+});
+
+test('tempi: 2 minuti e mezzo per consegnare, 40 secondi per la mancia, 10% di percentuale', () => {
+  assert.equal(RULES.orderTime, 150);
+  assert.equal(RULES.tipWindow, 40);
+  assert.equal(RULES.commission, 0.1);
 });

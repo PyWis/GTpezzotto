@@ -16,13 +16,18 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
   e torna in pizzeria prima, il nuovo ordine arriva dopo **5-15 secondi**.
 - Ogni ordine ha **da 3 a 7 pizze**, divise fra **tre famiglie** (massimo 4 pizze a famiglia) che abitano in palazzi a
   caso in tutta Napoli.
-- Hai **3 minuti** per ritirare le pizze in pizzeria e consegnarle tutte.
-- La mancia si calcola su **ogni singola consegna**: se servi una famiglia **entro un minuto** dal ritiro (o dalla
-  consegna precedente) ti lascia una **mancia dal 5% al 20%** della sua parte d'ordine. Il minuto riparte dopo ogni
+- Hai **2 minuti e 30 secondi** per ritirare le pizze in pizzeria e consegnarle tutte.
+- La mancia si calcola su **ogni singola consegna**: se servi una famiglia **entro 40 secondi** dal ritiro (o dalla
+  consegna precedente) ti lascia una **mancia dal 5% al 20%** della sua parte d'ordine. I 40 secondi ripartono dopo ogni
   famiglia.
-- Paga per ogni ordine: **10 €** fissi (solo se hai servito almeno una famiglia) + il **20%** del valore delle pizze
+- Paga per ogni ordine: **10 €** fissi (solo se hai servito almeno una famiglia) + il **10%** del valore delle pizze
   consegnate + le mance.
 - Per ogni pizza non consegnata c'è il **5% di probabilità di essere licenziato**.
+- **Al massimo 12 ordini al giorno.** L'**11°** ordine è del **calciatore** (se oggi non è ancora venuto), altrimenti
+  del **cliente speciale** del giorno (se non ha ancora chiamato), altrimenti di una famiglia normale. Il **12°** è del
+  cliente speciale (se non ha ancora chiamato), altrimenti di una famiglia normale.
+- Dopo il 12° ordine il pizzaiolo annuncia che **i clienti si sono mangiati tutto**: fino a fine giornata non arrivano
+  più ordini, ma le **altre pizzerie hanno sempre (100%) una consegna extra** da affidarti.
 
 ### Extra
 
