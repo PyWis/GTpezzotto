@@ -8,6 +8,7 @@ import {
   districtAt,
   MAP_H,
   MAP_W,
+  OY,
   PARKINGS,
   ROAD_PRIORITY,
   ROADS,
@@ -404,7 +405,7 @@ function drawDistrictNames(X, Y, k) {
   }
   ctx.font = `italic 600 ${Math.round(clamp(k * 2.4, 12, 22))}px Georgia,serif`;
   ctx.fillStyle = 'rgba(30,80,120,.7)';
-  ctx.fillText('Golfo di Napoli', X(138), Y(106));
+  ctx.fillText('Golfo di Napoli', X(138), Y(106 + OY));
   ctx.font = `italic 600 ${Math.round(clamp(k * 1.6, 10, 16))}px Georgia,serif`;
   ctx.fillStyle = 'rgba(150,100,30,.85)';
   for (const b of BEACHES) {

@@ -97,6 +97,27 @@ La partita si salva da sola ogni 15 secondi, quando si mette in pausa e quando s
 Le pizze si caricano passando davanti alla porta della pizzeria e si consegnano passando piano davanti al portone del
 cliente. La freccia attorno a Gennaro indica l'obiettivo più vicino.
 
+## Le due mappe
+
+Nella schermata iniziale si sceglie la mappa (cambiarla ricarica la pagina; ogni mappa ha il suo salvataggio):
+
+- **Mappa 1 · Napoli**: la città da Bagnoli a San Giovanni a Teduccio, con il radar in alto a destra.
+- **Mappa 2 · Napoli Grande**: la stessa città più la **Napoli nord**, e **senza radar** (resta lo stradario, tasto M).
+  Strade nuove: Via Epomeo, Via Pigna, Via Pietravalle, Viale Traiano, Via Domenico Fontana, Via Cinthia,
+  Via Camaldolilli, Via Piave, Corso Amedeo di Savoia, Via Capodimonte, Via Colli Aminei, Calata Capodichino,
+  Via Nuova Poggioreale, Via del Riposo, Via Santa Maria a Cubito, Corso Secondigliano, Via Labriola e Viale della
+  Resistenza. Quartieri nuovi: Soccavo, Arenella, Capodimonte, Scampia e Capodichino, con la Reggia e il Bosco di
+  Capodimonte, l'Ospedale Cardarelli, le Vele di Scampia, l'aeroporto, il Parco dei Camaldoli e il Cimitero di
+  Poggioreale. La metro Linea 1 arriva a Rione Alto, Colli Aminei e Piscinola-Scampia.
+
+In entrambe le mappe il **Rettifilo** (Corso Umberto I) porta da Via Medina a Piazza Garibaldi, con l'**Università
+Federico II** fra Via Mezzocannone e il Rettifilo. Nella mappa 2 il **centro storico è più largo** (20 colonne in più
+fra Via Mezzocannone e Via Duomo): nuovi vicoli (Vico Sedil Capuano, Vico Zuroli, Vico Pallonetto a Santa Chiara, Via
+Vicaria Vecchia, Via Forcella, Vico della Pace), San Lorenzo Maggiore, la Chiesa dei Girolamini e Piazza Nicola Amore
+sul Rettifilo.
+
+Si può anche aprire direttamente una mappa con `?mappa=1` o `?mappa=2` nell'indirizzo.
+
 ## Comandi
 
 | Tasto | Azione |
@@ -147,7 +168,8 @@ A ovest c'è la spiaggia di Bagnoli: da sinistra il Pontile Nord e poi Nisida, c
 src/
   main.js              ciclo di gioco: input → simulazione → rendering
   core/                matematica, colori, formattazione, tempo
-  data/                dati puri: geografia di Napoli, persone, menù e regole delle pizzerie
+  data/                dati puri: geografia di Napoli (city.js: le due mappe; la 2 sposta tutto di OY righe e
+                       aggiunge la Napoli nord), persone, menù e regole delle pizzerie
   world/               costruzione della mappa a tile, collisioni, alberi; roadnet.js: incroci, uscite dalla città e
                        parcheggi per il traffico
   entities/            Gennaro, Vespe, pedoni, traffico, funicolari e metro

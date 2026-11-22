@@ -1,7 +1,7 @@
 // NAPULE — Grand Theft Vespa. Entry point: wires input, simulation and rendering.
 
 import { time } from './core/time.js';
-import { LANDMARKS, STADIUM_GATE, TILE, VESUVIUS, districtAt } from './data/city.js';
+import { chooseMap, HAS_RADAR, LANDMARKS, MAP_ID, STADIUM_GATE, TILE, VESUVIUS, districtAt } from './data/city.js';
 import { HORN_REPLIES, RUMORS } from './data/people.js';
 import { audio, initAudio, setEngine, sfx, toggleMute } from './audio.js';
 import { bindInput, keys, onCommand } from './input.js';
@@ -258,7 +258,7 @@ function bindPointer() {
   canvas.addEventListener('pointerdown', (e) => {
     if (!playing()) return;
     if (!streetMap.open) {
-      if (inside(radarRect(), e.clientX, e.clientY)) openStreetMap(player);
+      if (HAS_RADAR && inside(radarRect(), e.clientX, e.clientY)) openStreetMap(player);
       return;
     }
     pointers.set(e.pointerId, [e.clientX, e.clientY]);
@@ -1065,7 +1065,7 @@ function render() {
     ...jobMarkers(time.t),
   ];
   if (game.started) {
-    drawRadar(player, markers);
+    if (HAS_RADAR) drawRadar(player, markers);
     drawHud({
       career,
       player,
@@ -1077,7 +1077,7 @@ function render() {
       },
       prompt: promptText(),
       hint: hintText(),
-      radarBottom: radarRect().y + radarRect().h,
+      radarBottom: HAS_RADAR ? radarRect().y + radarRect().h : 2,
     });
   }
   if (streetMap.open) drawStreetMap(player, markers);
@@ -1133,6 +1133,17 @@ document.getElementById('mute').onclick = () => {
   setMuted(toggleMute());
 };
 document.getElementById('go').onclick = start;
+// Le due mappe: cambiare mappa ricarica la pagina (ognuna ha il suo salvataggio).
+for (const b of document.querySelectorAll('#maps button')) {
+  const id = Number(b.dataset.map);
+  b.classList.toggle('on', id === MAP_ID);
+  b.onclick = () => {
+    if (id === MAP_ID) return;
+    chooseMap(id);
+    game.resetting = true; // niente salvataggio sulla mappa sbagliata mentre si ricarica
+    location.search = `?mappa=${id}`;
+  };
+}
 document.getElementById('pause').onclick = () => playing() && pause();
 if (game.loaded) {
   document.getElementById('go').textContent = `CONTINUA · GIORNO ${career.day}`;

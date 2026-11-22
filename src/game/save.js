@@ -3,8 +3,10 @@
 
 import { mount, player } from '../entities/player.js';
 import { vespas } from '../entities/vespas.js';
+import { MAP_ID } from '../data/city.js';
 
-const KEY = 'napule.save.v1';
+// Ogni mappa ha il suo salvataggio (le coordinate non sono le stesse).
+const KEY = MAP_ID === 1 ? 'napule.save.v1' : `napule.save.mappa${MAP_ID}.v1`;
 /** Kept apart from the saved game: a new game doesn't take it away. */
 const BLESSING_KEY = 'napule.dio-del-calcio.v1';
 const VERSION = 1;

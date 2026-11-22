@@ -4,7 +4,7 @@
 
 import { clock, euro, plural } from '../core/format.js';
 import { pick } from '../core/math.js';
-import { districtAt, STADIUM_GATE, TILE } from '../data/city.js';
+import { at, districtAt, STADIUM_GATE, TILE } from '../data/city.js';
 import { GARAGE, MECHANIC_LINES, MENU, PIZZERIAS, REPAIR_SHOP, RULES, SURNAMES } from '../data/pizza.js';
 import { VIP_COLOR, VIP_CUSTOMERS } from '../data/vip.js';
 import { snapToWalkable } from '../world/map.js';
@@ -19,9 +19,9 @@ import { clearSave, readBlessing, saveBlessing } from './save.js';
 
 export const PIZZERIA_RANGE = 44;
 
-for (const p of PIZZERIAS) p.pos = snapToWalkable(...p.at);
-GARAGE.pos = snapToWalkable(...GARAGE.at);
-REPAIR_SHOP.pos = snapToWalkable(...REPAIR_SHOP.at);
+for (const p of PIZZERIAS) p.pos = snapToWalkable(...at(...p.at));
+GARAGE.pos = snapToWalkable(...at(...GARAGE.at));
+REPAIR_SHOP.pos = snapToWalkable(...at(...REPAIR_SHOP.at));
 export { GARAGE, REPAIR_SHOP };
 
 export const FOOTBALLER_COLOR = '#5ec8ff';
@@ -51,7 +51,7 @@ const STADIUM_PITCH = {
 
 /** I clienti speciali, ognuno al suo monumento. */
 const VIPS = VIP_CUSTOMERS.map((c) => {
-  const [x, y] = snapToWalkable(...c.at);
+  const [x, y] = snapToWalkable(...at(...c.at));
   return {
     name: c.name,
     address: {
@@ -66,13 +66,13 @@ const VIPS = VIP_CUSTOMERS.map((c) => {
 const vipData = (name) => VIP_CUSTOMERS.find((c) => c.name === name);
 
 /** Il Pontile Nord, dove Filomena aspetta le 2 Margherite. */
-const [pierX, pierY] = snapToWalkable(6.5, 104);
+const [pierX, pierY] = snapToWalkable(...at(6.5, 104));
 const PIER = { x: pierX, y: pierY, street: 'Pontile Nord', label: 'Pontile Nord, Bagnoli', district: 'Bagnoli' };
 /** Castel dell'Ovo: Filomena aspetta sotto, poi si sale a piedi dalla porta. */
 export const CASTLE = {
-  meet: snapToWalkable(165.5, 97.5),
-  door: snapToWalkable(168, 98.6),
-  top: [168.5 * TILE, 102.5 * TILE],
+  meet: snapToWalkable(...at(165.5, 97.5)),
+  door: snapToWalkable(...at(168, 98.6)),
+  top: at(168.5, 102.5).map((v) => v * TILE),
 };
 
 export const career = new Career({

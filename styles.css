@@ -258,3 +258,32 @@ canvas {
 #pause {
   left: 56px;
 }
+
+/* Scelta della mappa nella schermata iniziale. */
+#start #maps {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin: 0 0 18px;
+}
+#start #maps button {
+  flex: 1 1 0;
+  max-width: 230px;
+  font-size: 11px;
+  padding: 10px 8px;
+  background: transparent;
+  color: var(--paper);
+  border: 2px solid #6b5f4a;
+  box-shadow: none;
+}
+#start #maps button small {
+  display: block;
+  margin-top: 6px;
+  font-size: 8px;
+  color: #cfc6b0;
+}
+#start #maps button.on {
+  border-color: var(--gold);
+  color: var(--gold);
+  box-shadow: 3px 3px 0 var(--tomato);
+}
