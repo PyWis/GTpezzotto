@@ -171,7 +171,7 @@ test('senza ritiro in pizzeria non si consegna, e bisogna rallentare', () => {
 
 // ------------------------------------------------------------------ money
 
-test('paga: 10€ + 10% del consegnato + mance entro 40 secondi', () => {
+test('paga: fisso + 10% del consegnato + mance entro 40 secondi', () => {
   const { career } = makeCareer();
   const shop = hire(career);
   career.update(0.1, at(shop.pos));
@@ -185,9 +185,9 @@ test('paga: 10€ + 10% del consegnato + mance entro 40 secondi', () => {
     const v = orderValue(s);
     assert.ok(s.tip >= v * 0.05 - 0.01 && s.tip <= v * 0.2 + 0.01, `mancia ${s.tip} su ${v}`);
   }
-  assert.equal(order.pay.base, 10);
+  assert.equal(order.pay.base, RULES.basePay);
   assert.ok(Math.abs(order.pay.commission - value * 0.1) < 0.01);
-  assert.ok(Math.abs(order.pay.total - (10 + value * 0.1 + tips)) < 0.02);
+  assert.ok(Math.abs(order.pay.total - (RULES.basePay + value * 0.1 + tips)) < 0.02);
   assert.equal(career.wallet, order.pay.total);
 });
 
@@ -220,7 +220,7 @@ test('niente mancia dopo 40 secondi', () => {
   assert.equal(stop.tip, 0);
 });
 
-test('i 10€ fissi si pagano solo se qualcosa è stato consegnato', () => {
+test('il fisso si paga solo se qualcosa è stato consegnato', () => {
   const { career } = makeCareer({ rules: { firingChancePerPizza: 0 } });
   const shop = hire(career);
   career.update(0.1, at(shop.pos));
@@ -235,7 +235,7 @@ test('i 10€ fissi si pagano solo se qualcosa è stato consegnato', () => {
   career.update(1, at(shop.pos));
   career.update(1, at([order.stops[0].address.x, order.stops[0].address.y]));
   career.update(200, far);
-  assert.equal(order.pay.base, 10);
+  assert.equal(order.pay.base, RULES.basePay);
 });
 
 test('pizze non consegnate: 5% a pizza di essere licenziato', () => {
@@ -328,7 +328,7 @@ test('consegna extra pagata il doppio di una normale, anche da disoccupato', () 
   career.update(1, at([stop.address.x, stop.address.y]));
   assert.equal(order.state, 'done');
   assert.ok(stop.tip > 0);
-  assert.ok(Math.abs(order.pay.total - 2 * (10 + orderValue(stop) * 0.1 + stop.tip)) < 0.02);
+  assert.ok(Math.abs(order.pay.total - 2 * (RULES.basePay + orderValue(stop) * 0.1 + stop.tip)) < 0.02);
   assert.equal(career.status, 'unemployed');
 });
 
@@ -411,17 +411,106 @@ test('di norma il calciatore chiama nel 4% degli ordini', () => {
 
 // ------------------------------------------------------------------ officina
 
-test("l'officina di Fuorigrotta modifica la Vespa per 1000€", () => {
+test("l'officina di Fuorigrotta modifica la Vespa per 2000€", () => {
   const { career } = makeCareer();
   const vespa = {};
-  career.wallet = 999;
+  career.wallet = 1999;
   assert.equal(career.tune(vespa), false, 'non bastano i soldi');
-  career.wallet = 1500;
+  career.wallet = 2500;
   assert.equal(career.tune(vespa), true);
   assert.equal(career.wallet, 500);
   assert.ok(career.isTuned(vespa));
   assert.equal(career.tune(vespa), false, 'già modificata');
   assert.equal(RULES.tuning.speed, 1.2);
+  assert.equal(career.debts.length, 0);
+});
+
+test('Vespa truccata a rate: 1000€ subito e 150€ ogni sera per 8 giorni', () => {
+  const { career, events } = makeCareer({ rules: { livingCost: [0, 0] } });
+  const vespa = {};
+  career.wallet = 2000;
+  assert.equal(career.tune(vespa, 'installments'), true);
+  assert.equal(career.wallet, 1000);
+  wait(career, 10 * RULES.dayLength);
+  assert.equal(career.wallet, 1000 - 8 * 150, 'si va in rosso, ma la rata si paga');
+  const days = ofType(events, 'dayEnded');
+  assert.deepEqual(days[0].charges, [{ label: 'Rata della Vespa', amount: 150 }]);
+  assert.deepEqual(days[8].charges, []);
+  assert.equal(career.debts.length, 0);
+});
+
+test('con la Vespa truccata gli ordini arrivano fino a 5 famiglie e 12 pizze', () => {
+  const { career } = makeCareer({ rng: seeded(4), rules: { firingChancePerPizza: 0, livingCost: [0, 0] } });
+  career.tunedVespas.add({});
+  const shop = hire(career);
+  const sizes = [];
+  for (let k = 0; k < 40; k++) {
+    career.job.nextOrderAt = career.time;
+    career.update(0.1, at(shop.pos));
+    const order = career.activeOrders.find((o) => o.kind === 'regular');
+    if (order) {
+      assert.equal(order.stops.length, 5);
+      sizes.push(order.pizzaCount);
+      career.closeOrder(order, { judged: false });
+    }
+    if (career.soldOut) wait(career, career.dayTimeLeft + 1);
+  }
+  assert.ok(Math.max(...sizes) <= 12 && Math.min(...sizes) >= 5);
+  assert.ok(
+    sizes.some((n) => n > 7),
+    'più di 7 pizze',
+  );
+});
+
+// ------------------------------------------------------------------ la pizzeria di Gennaro
+
+test('pizzeria propria: 5000€ (o 2000 + 150×18), licenza 200€ al giorno, 50% delle consegne, spese più alte', () => {
+  const { career, events } = makeCareer({ rng: seeded(2), rules: { firingChancePerPizza: 1 } });
+  career.wallet = 1999;
+  assert.equal(career.buyShop('installments'), false);
+  career.wallet = 2000;
+  assert.equal(career.buyShop('installments'), true);
+  assert.equal(career.wallet, 0);
+  assert.equal(career.canOpenShopAt(career.pizzerias[1].pos), false, "troppo vicino a un'altra pizzeria");
+  assert.ok(career.openOwnShop([50000, 9000]));
+  assert.equal(career.ownShop.pos[0], 50000);
+  assert.equal(career.standingWith('gennaro'), 'employer');
+  assert.equal(career.quit(), false, 'non ci si licenzia da sé stessi');
+  career.update(0.1, far);
+  const order = career.activeOrders[0];
+  career.update(0.1, at(order.pizzeria.pos));
+  career.update(0.1, at([order.stops[0].address.x, order.stops[0].address.y]));
+  wait(career, RULES.orderTime);
+  assert.equal(order.state, 'failed');
+  assert.equal(order.pay.base, 0, 'niente fisso');
+  const value = orderValue(order.stops[0]);
+  assert.ok(Math.abs(order.pay.commission - value * 0.5) < 0.01, 'il 50%');
+  assert.equal(career.status, 'employed', 'il padrone non si licenzia');
+  const before = career.wallet;
+  wait(career, career.dayTimeLeft + 1);
+  const [day] = ofType(events, 'dayEnded');
+  assert.ok(day.living >= 150 && day.living <= 300);
+  assert.deepEqual(
+    day.charges.map((c) => c.amount),
+    [150, 200],
+  );
+  assert.ok(Math.abs(career.wallet - (before - day.living - 350)) < 0.01);
+  // Salvataggio: la pizzeria resta dove l'ha aperta.
+  const copy = makeCareer().career;
+  copy.restore(JSON.parse(JSON.stringify(career.serialize())));
+  assert.deepEqual(copy.ownShop.pos, [50000, 9000]);
+  assert.equal(copy.job.pizzeria, copy.ownShop);
+  assert.equal(copy.debts[0].daysLeft, 17);
+});
+
+test('la storia può fermare il tempo', () => {
+  const { career } = makeCareer();
+  career.timeLimit = 100;
+  wait(career, 500);
+  assert.equal(career.time, 100);
+  career.timeLimit = null;
+  wait(career, 5);
+  assert.equal(career.time, 105);
 });
 
 // ------------------------------------------------------------------ officina di Via Gianturco
@@ -463,7 +552,7 @@ test('missione segreta: giorno 10, dopo 10 minuti, una pizza per il Dio del Calc
   career.update(1, at([STADIUM.x, STADIUM.y]));
   assert.equal(order.state, 'done');
   assert.equal(order.stops[0].tip, 115, 'mancia extra di 115€');
-  assert.ok(Math.abs(order.pay.total - (10 + orderValue(order.stops[0]) * 0.1 + 115)) < 0.02);
+  assert.ok(Math.abs(order.pay.total - (RULES.basePay + orderValue(order.stops[0]) * 0.1 + 115)) < 0.02);
 
   wait(career, RULES.dayLength, far);
   assert.equal(career.orders.filter((o) => o.kind === 'legend').length, 0, 'una volta sola');

@@ -10,13 +10,14 @@ const BLESSING_KEY = 'napule.dio-del-calcio.v1';
 const VERSION = 1;
 
 /** Saves now. Skipped while riding the metro or a funicular (Gennaro is between two stations). */
-export function saveGame(career) {
+export function saveGame(career, story) {
   if (career.status === 'broke') return clearSave(), false;
   if (player.mode !== 'foot' && player.mode !== 'vespa') return false;
   const data = {
     version: VERSION,
     savedAt: Date.now(),
     career: career.serialize(vespas),
+    story: story?.serialize() ?? null,
     player: { x: player.x, y: player.y, a: player.a, mode: player.mode, vespa: vespas.indexOf(player.vespa) },
     vespas: vespas.map((v) => ({ x: v.x, y: v.y, a: v.a, condition: v.condition ?? 1 })),
   };
@@ -64,9 +65,10 @@ export function clearSave() {
 }
 
 /** Puts a saved game back in place. Returns false if the save is unreadable. */
-export function loadGame(career, data) {
+export function loadGame(career, data, story) {
   try {
     career.restore(data.career, vespas);
+    story?.restore(data.story ?? null);
     data.vespas.forEach((s, i) => {
       if (vespas[i]) Object.assign(vespas[i], { x: s.x, y: s.y, a: s.a, v: 0, condition: s.condition, ridden: false });
     });

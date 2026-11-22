@@ -12,7 +12,8 @@ import { sfx } from '../audio.js';
 import { html, queueDialog, raw, showDialog } from '../ui/dialog.js';
 import { showBanner, toast } from '../render/hud.js';
 import { STOP_COLOR } from '../render/delivery.js';
-import { Career, OrderKind, orderValue } from './career.js';
+import { Career, OrderKind, orderValue, OWN_SHOP_ID } from './career.js';
+import { Phase, Story } from './story.js';
 import { findAddress } from './addresses.js';
 import { clearSave, readBlessing, saveBlessing } from './save.js';
 
@@ -25,6 +26,7 @@ export { GARAGE, REPAIR_SHOP };
 
 export const FOOTBALLER_COLOR = '#5ec8ff';
 export const SIDE_COLOR = '#ff9f40';
+export const FILOMENA_COLOR = '#ff4f7b';
 export const LEGEND_COLOR = '#ffe14d';
 export { VIP_COLOR };
 const KIND_COLOR = {
@@ -32,6 +34,7 @@ const KIND_COLOR = {
   [OrderKind.FOOTBALLER]: FOOTBALLER_COLOR,
   [OrderKind.SIDE]: SIDE_COLOR,
   [OrderKind.LEGEND]: LEGEND_COLOR,
+  [OrderKind.STORY]: FILOMENA_COLOR,
 };
 /** Colour of a customer's beacon, by kind of order. */
 export const stopColor = (order) => KIND_COLOR[order.kind] ?? STOP_COLOR;
@@ -62,6 +65,16 @@ const VIPS = VIP_CUSTOMERS.map((c) => {
 });
 const vipData = (name) => VIP_CUSTOMERS.find((c) => c.name === name);
 
+/** Il Pontile Nord, dove Filomena aspetta le 2 Margherite. */
+const [pierX, pierY] = snapToWalkable(6.5, 104);
+const PIER = { x: pierX, y: pierY, street: 'Pontile Nord', label: 'Pontile Nord, Bagnoli', district: 'Bagnoli' };
+/** Castel dell'Ovo: Filomena aspetta sotto, poi si sale a piedi dalla porta. */
+export const CASTLE = {
+  meet: snapToWalkable(165.5, 97.5),
+  door: snapToWalkable(168, 98.6),
+  top: [168.5 * TILE, 102.5 * TILE],
+};
+
 export const career = new Career({
   pizzerias: PIZZERIAS,
   menu: MENU,
@@ -73,6 +86,9 @@ export const career = new Career({
   blessed: readBlessing(),
   onEvent: handleEvent,
 });
+
+export const story = new Story({ career, pier: PIER, castle: CASTLE, onEvent: handleStory });
+export { Phase };
 
 // ---------------------------------------------------------------------------
 // Conversations in speech bubbles (played by main.js, which owns the people)
@@ -183,7 +199,9 @@ export function currentObjective(player) {
       targets.push({ x: o.pizzeria.pos[0], y: o.pizzeria.pos[1], color: stopColor(o) });
   if (!pendingStops().length)
     for (const p of PIZZERIAS.filter(extraWanted)) targets.push({ x: p.pos[0], y: p.pos[1], color: SIDE_COLOR });
-  if (career.status === 'unemployed')
+  if (story.phase === Phase.CASTLE) targets.push({ x: CASTLE.meet[0], y: CASTLE.meet[1], color: FILOMENA_COLOR });
+  if (story.phase === Phase.CLIMB) targets.push({ x: CASTLE.door[0], y: CASTLE.door[1], color: FILOMENA_COLOR });
+  if (career.status === 'unemployed' && !story.frozen)
     for (const p of PIZZERIAS.filter(worthAsking)) targets.push({ x: p.pos[0], y: p.pos[1], color: '#ffd23f' });
   let best = null;
   let bestD = Infinity;
@@ -273,6 +291,9 @@ export function openPizzeria(p) {
       ? html`<p class="small">Consegne extra da fare? Pe' mo' no. Ripassa più tardi.</p>`
       : '';
   const sideButtons = side ? [{ label: 'Porta le pizze', run: () => career.takeSideJob(p.id) }] : [];
+  // Dal giorno 12, fidanzato con Filomena, Gennaro chiede quanto costa mettersi in proprio.
+  if (story.canBuyShop && p.id !== OWN_SHOP_ID)
+    sideButtons.push({ label: 'Quanto costa aprire na pizzeria?', run: () => shopOffer(p) });
 
   switch (standing) {
     case 'hiring':
@@ -311,6 +332,20 @@ export function openPizzeria(p) {
         [],
       );
     case 'employer': {
+      if (p.id === OWN_SHOP_ID)
+        return show(
+          html`<p>«Gennà, 'e pizze so' pronte, curre!» dice Filomena dalla porta.</p>
+            <p class="small">
+              ${career.closedToday
+                ? 'Per oggi è finito tutto.'
+                : career.activeOrders.some((o) => !o.pickedUp)
+                  ? 'Ci sono pizze da ritirare: passa davanti alla porta.'
+                  : `Il prossimo ordine arriva tra ${clock(career.nextOrderIn)}.`}
+              Tieni il ${Math.round(RULES.ownShop.share * 100)}% di ogni consegna; licenza
+              ${euro(RULES.ownShop.licence)} al giorno.
+            </p>`,
+          [],
+        );
       const quit = {
         label: 'Licenziati',
         run: () =>
@@ -339,18 +374,50 @@ export function openPizzeria(p) {
       return show(
         html`<p>«Jamme, Gennà, 'e pizze se fanno fredde!»</p>
           <p class="small">${status}</p>`,
-        [quit],
+        [quit, ...sideButtons],
       );
     }
   }
+}
+
+/** What it costs to open a pizzeria of his own (from day 12, engaged). */
+function shopOffer(p) {
+  const o = RULES.ownShop;
+  const rate = `${euro(o.deposit)} + ${euro(o.installment.amount)} × ${o.installment.days} giorni`;
+  const buy = (plan) => () => {
+    if (!story.buyShop(plan)) return;
+    sfx.coins();
+    showBanner('Il tempo si è fermato', 4);
+    toast('Scegli dove aprire la tua pizzeria e premi E (lontano dalle altre)', FILOMENA_COLOR, 8);
+  };
+  showDialog({
+    title: p.name.toUpperCase(),
+    color: p.color,
+    body: html`<p>
+        «Te vuò mettere in proprio, eh? Pe' na pizzeria toja ce vonno ${euro(o.licence)} 'o juorno 'e licenza, e
+        ${euro(o.cost)} anticipati. Oppure ${euro(o.deposit)} mo' e ${euro(o.installment.amount)} 'o juorno pe'
+        ${o.installment.days} juorne.»
+      </p>
+      <p class="small">
+        Niente più fisso: tieni il ${Math.round(o.share * 100)}% di ogni consegna. Da padrone le spese per vivere
+        salgono a ${euro(o.livingCost[0])}-${euro(o.livingCost[1])} al giorno. Dopo aver pagato il tempo si ferma finché
+        non scegli dove aprire. Hai ${euro(career.wallet)}.
+      </p>`,
+    buttons: [
+      { label: `Pago tutto (${euro(o.cost)})`, disabled: career.wallet < o.cost, run: buy('full') },
+      { label: `A rate (${rate})`, disabled: career.wallet < o.deposit, run: buy('installments') },
+      { label: 'Ci penso', cancel: true },
+    ],
+  });
 }
 
 // ---------------------------------------------------------------------------
 // The mechanic in Fuorigrotta (press E at the door, with the Vespa)
 // ---------------------------------------------------------------------------
 export function openGarage(vespa) {
-  const { cost, speed } = RULES.tuning;
-  const faster = `${Math.round((speed - 1) * 100)}%`;
+  const { cost, speed, deposit, installment, familiesPerOrder, pizzasPerOrder } = RULES.tuning;
+  const rate = `${euro(deposit)} + ${euro(installment.amount)} × ${installment.days} giorni`;
+  const perks = `va il ${Math.round((speed - 1) * 100)}% più veloce e porti ordini fino a ${familiesPerOrder} famiglie e ${pizzasPerOrder[1]} pizze`;
   const close = { label: 'Arrivederci', cancel: true };
   const line = html`<p class="small">«${mechanicLine('tuning')}»</p>`;
   const show = (body, buttons = []) =>
@@ -364,19 +431,22 @@ export function openGarage(vespa) {
   if (!vespa)
     return show(
       html`<p>«E 'o motorino addò sta? Purtammillo ccà e t'o faccio vulà!»</p>
-        <p class="small">Torna in Vespa: per ${euro(cost)} la modifico e va il ${faster} più veloce.</p>`,
+        <p class="small">Torna in Vespa: per ${euro(cost)} (o ${rate}) la modifico: ${perks}.</p>`,
     );
   if (career.isTuned(vespa))
     return show(html`<p>«Chesta Vespa già l'aggio fatta io. Cchiù veloce 'e accussì nun se po'!»</p>`);
-  if (career.wallet < cost)
+  if (career.wallet < deposit)
     return show(
-      html`<p>«Pe' te fa' 'a Vespa ce vonno ${euro(cost)}, e tu ne tieni ${euro(career.wallet)}.»</p>
+      html`<p>«Pe' te fa' 'a Vespa ce vonno ${euro(cost)}, o ${rate}. E tu ne tieni ${euro(career.wallet)}.»</p>
         <p class="small">Torna quando hai messo da parte i soldi.</p>`,
     );
   return show(
-    html`<p>«Marmitta nova, carburatore alleggerito... e chesta Vespa vola!»</p>
-      <p class="small">Costa ${euro(cost)}: la Vespa con cui sei arrivato andrà il ${faster} più veloce.</p>`,
-    [{ label: `Modifica (${euro(cost)})`, run: () => career.tune(vespa) }],
+    html`<p>«Marmitta nova, carburatore alleggerito, portapacchi gruosso... e chesta Vespa vola!»</p>
+      <p class="small">La Vespa con cui sei arrivato ${perks}. Le rate si pagano a fine giornata.</p>`,
+    [
+      { label: `Pago tutto (${euro(cost)})`, disabled: career.wallet < cost, run: () => career.tune(vespa, 'full') },
+      { label: `A rate (${rate})`, run: () => career.tune(vespa, 'installments') },
+    ],
   );
 }
 
@@ -438,7 +508,7 @@ const row = (label, value, cls = '') =>
     <td>${value}</td>
   </tr>`;
 
-function dayReport({ ledger, earned, living, wallet, daysInRed }) {
+function dayReport({ ledger, earned, living, charges, wallet, daysInRed }) {
   const { pay } = ledger;
   const paid = ledger.orders.filter((o) => o.pay.base).length;
   const warning =
@@ -460,6 +530,7 @@ function dayReport({ ledger, earned, living, wallet, daysInRed }) {
         ${raw(row(`Percentuale ${RULES.commission * 100}%`, euro(pay.commission)))} ${raw(row('Mance', euro(pay.tips)))}
         ${raw(pay.bonus ? row('Bonus (extra e calciatore)', euro(pay.bonus)) : '')}
         ${raw(row('Guadagno della giornata', euro(earned), 'total'))} ${raw(row('Spese per vivere', euro(-living)))}
+        ${raw((charges ?? []).map((c) => row(c.label, euro(-c.amount))).join(''))}
         ${raw(row('Nel portafoglio', euro(wallet), 'total'))}
       </table>
       ${raw(warning ? html`<p class="warn">${warning}</p>` : '')}
@@ -489,6 +560,57 @@ function vipChat(name, stop) {
   if (!c) return;
   talkHandler({ kind: 'vip', name, customer: c, address: stop.address, lines: stop.visit > 1 ? c.again : c.first });
   if (stop.tip) toast(`${name} ti lascia una mancia di ${euro(stop.tip)}`, VIP_COLOR, 4);
+}
+
+/** The story of Gennaro and Filomena: the scenes are acted out by main.js, in speech bubbles. */
+function handleStory(e) {
+  switch (e.type) {
+    case 'filomenaVisit':
+      talkHandler({ kind: 'filomenaVisit', day: e.day, tuneHint: e.tuneHint });
+      break;
+    case 'phoneCall': {
+      sfx.newOrder();
+      const where = e.order.pizzeria === career.job?.pizzeria ? 'in pizzeria' : `da ${e.order.pizzeria.name}`;
+      queueDialog({
+        title: 'DRIIIN! UNA TELEFONATA',
+        color: FILOMENA_COLOR,
+        body: html`<p>
+            «Pronto, Gennaro? Chillo d''e pizze? Me servono doje Margherite, 'o Pontile Nord. Te le pago io.»
+          </p>
+          <p class="small">Una voce di ragazza. Ritira le 2 Margherite ${where} e portale al Pontile Nord.</p>`,
+        buttons: [{ label: 'Arrivo!', cancel: true, badge: '↵' }],
+      });
+      break;
+    }
+    case 'pierWaiting':
+      showBanner('Il tempo si è fermato', 4);
+      toast('Porta le 2 Margherite al Pontile Nord, a Bagnoli', FILOMENA_COLOR, 7);
+      break;
+    case 'pierScene':
+      talkHandler({ kind: 'pier', done: () => story.finishPier() });
+      break;
+    case 'castleCall':
+      sfx.newOrder();
+      showBanner('Il giorno non finisce', 4);
+      queueDialog({
+        title: 'UN MESSAGGIO',
+        color: FILOMENA_COLOR,
+        body: html`<p>«Gennà, t'aspetto sotto Castel dell'Ovo. Viene, ca stasera 'o mare è bello assaje. — Filomena»</p>
+          <p class="small">La giornata non finisce finché non vai da lei.</p>`,
+        buttons: [{ label: 'Arrivo!', cancel: true, badge: '↵' }],
+      });
+      break;
+    case 'castleMeet':
+      talkHandler({ kind: 'castleMeet' });
+      break;
+    case 'castleTop':
+      talkHandler({ kind: 'castleTop', done: () => story.finishCastle() });
+      break;
+    case 'engaged':
+      sfx.coins();
+      showBanner('Fidanzati!', 5);
+      break;
+  }
 }
 
 function handleEvent(e) {
@@ -564,10 +686,22 @@ function handleEvent(e) {
       sfx.coins();
       showBanner('Vespa modificata!', 3.5);
       toast(
-        `Spesi ${euro(e.cost)}: ora la Vespa va il ${Math.round((RULES.tuning.speed - 1) * 100)}% più veloce`,
+        e.plan === 'installments'
+          ? `Spesi ${euro(e.cost)}, più ${euro(RULES.tuning.installment.amount)} ogni sera per ${RULES.tuning.installment.days} giorni: la Vespa vola e porta ordini più grossi`
+          : `Spesi ${euro(e.cost)}: la Vespa vola e porta ordini più grossi`,
         '#5ec8ff',
-        5,
+        6,
       );
+      break;
+    case 'storyFired':
+      sfx.fired();
+      talkHandler({ kind: 'storyFired', pizzeria: e.pizzeria });
+      toast(`Licenziato da ${e.pizzeria.name}: non ti riprende prima del giorno ${e.rehireDay}`, '#ff5b4b', 6);
+      break;
+    case 'shopOpened':
+      sfx.coins();
+      showBanner(`${e.pizzeria.name}!`, 4);
+      toast('La pizzeria è aperta: Filomena ti aspetta alla porta. Arriva il primo ordine!', FILOMENA_COLOR, 6);
       break;
     case 'blessed':
       saveBlessing();

@@ -5,7 +5,7 @@ import { LANDMARKS, STADIUM_GATE, TILE, VESUVIUS, districtAt } from './data/city
 import { HORN_REPLIES, RUMORS } from './data/people.js';
 import { audio, initAudio, setEngine, sfx, toggleMute } from './audio.js';
 import { bindInput, keys, onCommand } from './input.js';
-import { inStadium, isInTunnel, placeNameAt, stadiumGate } from './world/map.js';
+import { collides, inStadium, isInTunnel, placeNameAt, Solid, snapToWalkable, stadiumGate } from './world/map.js';
 import { trees } from './world/trees.js';
 import {
   dismount,
@@ -38,7 +38,9 @@ import {
 import { isTalking, say } from './entities/speech.js';
 import {
   career,
+  CASTLE,
   conditionPct,
+  FILOMENA_COLOR,
   currentObjective,
   footballerOrder,
   GARAGE,
@@ -55,17 +57,29 @@ import {
   openRepairShop,
   pendingStops,
   pizzasOnBoard,
+  Phase,
   pizzeriaLook,
   REPAIR_SHOP,
+  story,
   stopColor,
   VIP_COLOR,
   vipOrder,
 } from './game/job.js';
 import { clearSave, loadGame, readSave, saveGame } from './game/save.js';
-import { MAX_HANDOFF_SPEED } from './game/career.js';
+import { MAX_HANDOFF_SPEED, OWN_SHOP_ID } from './game/career.js';
 import { PIZZERIAS, RULES } from './data/pizza.js';
 import { canvas, ctx, resize, screen } from './render/canvas.js';
-import { addShake, baseZoom, beginFrame, camera, follow, isVisible, toScreen, visibleTiles } from './render/camera.js';
+import {
+  addShake,
+  baseZoom,
+  beginFrame,
+  camera,
+  follow,
+  isVisible,
+  project,
+  toScreen,
+  visibleTiles,
+} from './render/camera.js';
 import { drawGround } from './render/ground.js';
 import { drawBubble, drawCar, drawFallenPerson, drawPerson, drawTree, drawVespa } from './render/sprites.js';
 import { drawEffects } from './render/effects.js';
@@ -116,6 +130,12 @@ function openMetroMenu({ line, index }) {
 
 /** What pressing E would do right now (null = nothing). */
 function availableAction() {
+  // La pizzeria comprata: Gennaro sceglie dove aprirla.
+  if (story.phase === Phase.PLACING && isOnStreet()) {
+    const pos = snapToWalkable(player.x / TILE, player.y / TILE);
+    if (!career.canOpenShopAt(pos)) return { label: "TROPPO VICINO A UN'ALTRA PIZZERIA", run: () => {} };
+    return { label: 'E · APRI QUI LA TUA PIZZERIA', run: () => story.openShopAt(pos) };
+  }
   if (player.mode === 'vespa') {
     const shop = speed() < 40 && nearestPizzeria(player.x, player.y);
     if (shop) return { label: `E · ${shop.name.toUpperCase()}`, run: () => openPizzeria(shop) };
@@ -214,7 +234,7 @@ function pause() {
   });
 }
 
-const save = () => game.started && saveGame(career);
+const save = () => game.started && saveGame(career, story);
 
 function newGame() {
   game.resetting = true; // niente salvataggio mentre si ricarica
@@ -314,12 +334,15 @@ function update(dt) {
       shake = updateRiding(dt, (career.isTuned(player.vespa) ? RULES.tuning.speed : 1) * (player.vespa.condition ?? 1));
       break;
   }
+  holdPlayer();
   if (player.sayT > 0) player.sayT -= dt;
   shake = Math.max(shake, people.updatePedestrians(dt), traffic.updateTraffic(dt));
+  holdPlayer(); // anche dopo gli urti con le auto
   updateFootballer(dt);
   updateVip(dt);
   updateMechanics(dt);
   updatePizzaiolo(dt);
+  updateFilomena(dt);
   updateTalks(dt);
   updateLegend(dt);
   updateRumors(dt);
@@ -356,8 +379,11 @@ function tick(dt) {
   }
   if (isDialogOpen()) return setEngine(null);
   // The delivery clock runs in real time, even while looking at the map.
-  const courier = isOnStreet() ? { x: player.x, y: player.y, speed: speed() } : { x: NaN, y: NaN, speed: Infinity };
+  const courier = isOnStreet()
+    ? { x: player.x, y: player.y, speed: speed(), onFoot: player.mode === 'foot' }
+    : { x: NaN, y: NaN, speed: Infinity, onFoot: false };
   career.update(dt, courier);
+  story.update(courier);
   if (streetMap.open) {
     const pan = 500 * dt;
     panStreetMap(((keys.left ? 1 : 0) - (keys.right ? 1 : 0)) * pan, ((keys.up ? 1 : 0) - (keys.down ? 1 : 0)) * pan);
@@ -410,6 +436,25 @@ function promptText() {
 
 function hintText() {
   if (!game.started) return null;
+  switch (story.phase) {
+    case Phase.CALL:
+      if (!story.order?.pickedUp)
+        return `Ritira le 2 Margherite da ${story.order?.pizzeria.name} e portale al Pontile Nord`;
+      break;
+    case Phase.PIER:
+      return 'Il tempo è fermo: porta le 2 Margherite al Pontile Nord';
+    case Phase.PIER_SCENE:
+    case Phase.TOP:
+      return '';
+    case Phase.CASTLE:
+      return "Il giorno non finisce: Filomena t'aspetta sotto Castel dell'Ovo";
+    case Phase.CLIMB:
+      return player.mode === 'foot'
+        ? 'Sali a piedi sul castello con Filomena: segui la freccia'
+        : 'Scendi dalla Vespa (E): sul castello si sale a piedi';
+    case Phase.PLACING:
+      return 'Il tempo è fermo: scegli dove aprire la tua pizzeria e premi E';
+  }
   if (legendOrder()?.pickedUp && !inStadium(player.x, player.y))
     return "Entra nello Stadio da Piazzale Tecchio: t'aspettano a centrocampo";
   if (career.status === 'unemployed' && game.hintTime <= 0)
@@ -497,6 +542,282 @@ function drawVip() {
   ctx.fillText('★', sx, sy - 14 * z - hop);
 }
 
+// ---------------------------------------------------------------------------
+// The story: Filomena, the pier, Castel dell'Ovo, the new pizzeria
+// ---------------------------------------------------------------------------
+const FILOMENA_LOOK = { shirt: FILOMENA_COLOR, trousers: '#2b2b3a', hair: '#4a2410', skin: '#e9bb98' };
+const filomena = { ...FILOMENA_LOOK, x: 0, y: 0, a: 0, h: 0.5, say: '', sayT: 0, walk: 0, moving: false };
+const filomenaVespa = { x: 0, y: 0, a: 0, v: 0, color: '#f2f2ea' };
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+/** A scene that holds Gennaro still (on top of the castle) or keeps him close (talking with a VIP). */
+const scene = { top: false, hold: null };
+const TOP_H = 2.6; // l'altezza di Castel dell'Ovo
+const topGennaro = { say: '', sayT: 0 };
+const VIP_LEASH = 20 * (TILE / 2.6); // 20 metri
+const leash = { x: 0, y: 0 };
+
+/** Keeps Gennaro where the story wants him: within 20 m of a chatting VIP, still on top of the castle. */
+function holdPlayer() {
+  if (scene.top && scene.hold) {
+    Object.assign(player, scene.hold);
+    return;
+  }
+  if (!vip.chatting) return;
+  if (Math.hypot(player.x - vip.x, player.y - vip.y) <= VIP_LEASH) {
+    Object.assign(leash, { x: player.x, y: player.y });
+    return;
+  }
+  // Troppo lontano: Gennaro torna indietro e la Vespa si ferma.
+  Object.assign(player, leash);
+  if (player.vespa) Object.assign(player.vespa, { x: leash.x, y: leash.y, v: 0 });
+  if (!isTalking(vip) && !isTalking(player)) say(vip, "Gennà, addò vaje? Nun aggio fernuto 'e parlà!", 2);
+}
+
+// Day 3-4 (and 6-7): Filomena rides up on her Vespa, says hi and rides off. «Ma chesta chi è?»
+const ride = { active: false, state: '', t: 0, lines: [] };
+const RIDE_SPEED = 430;
+const GREETINGS = [
+  'Ciao Gennà!',
+  "Uè, Gennà! Comme va 'o lavoro?",
+  "Ciao bello d''e pizze!",
+  "Gennà, t'aggio superato n'ata vota!",
+];
+const WHO_IS_SHE = ['Ma chesta chi è?', "Ma chi è chesta? E comme sape 'o nomme mio?", "N'ata vota chesta? Ma chi è?"];
+const TUNE_HINT = "Gennà, ma comme vaje chiano! Fatte truccà 'o motorino a Fuorigrotta!";
+
+function startRide({ tuneHint }) {
+  let spot = null;
+  for (let k = 0; k < 24 && !spot; k++) {
+    const a = Math.random() * Math.PI * 2;
+    const x = player.x + Math.cos(a) * 380;
+    const y = player.y + Math.sin(a) * 380;
+    if (!collides(x, y, 9, Solid.VESPA)) spot = [x, y];
+  }
+  const [x, y] = spot ?? [player.x - 380, player.y];
+  Object.assign(filomenaVespa, { x, y, a: Math.atan2(player.y - y, player.x - x), v: RIDE_SPEED });
+  ride.lines = [[filomena, pick(GREETINGS)], [player, pick(WHO_IS_SHE)], ...(tuneHint ? [[filomena, TUNE_HINT]] : [])];
+  Object.assign(ride, { active: true, state: 'approach', t: 0 });
+  sfx.horn();
+}
+
+function updateRide(dt) {
+  ride.t += dt;
+  const v = filomenaVespa;
+  const d = Math.hypot(player.x - v.x, player.y - v.y);
+  const toward = Math.atan2(player.y - v.y, player.x - v.x);
+  if (ride.state === 'approach' || ride.state === 'talk') {
+    // Gli si mette accanto e lo segue mentre parlano.
+    const gap = ride.state === 'talk' ? 60 : 44;
+    v.v = d > gap ? Math.min(RIDE_SPEED, (d - gap) * 4 + 40) : 0;
+    if (d > gap) v.a = toward;
+    if (ride.state === 'approach' && (d <= gap || ride.t > 30)) {
+      ride.state = 'talk';
+      startTalk({
+        lines: ride.lines,
+        canHear: () => true,
+        onEnd: () => Object.assign(ride, { state: 'leave', t: 0 }),
+      });
+    }
+  } else {
+    v.a = toward + Math.PI; // se ne va
+    v.v = RIDE_SPEED;
+    if (ride.t > 2 && !isVisible(v.x, v.y)) ride.active = false;
+  }
+  v.x += Math.cos(v.a) * v.v * dt;
+  v.y += Math.sin(v.a) * v.v * dt;
+  Object.assign(filomena, { x: v.x, y: v.y, h: 0.5 });
+}
+
+/** Where Filomena is right now, outside of her Vespa rides (null: not around). */
+function filomenaSpot() {
+  switch (story.phase) {
+    case Phase.PIER:
+    case Phase.PIER_SCENE:
+      return [story.pier.x + 16, story.pier.y - 8];
+    case Phase.CASTLE:
+      return [CASTLE.meet[0] + 14, CASTLE.meet[1] - 6];
+    case Phase.OWNER:
+      return career.ownShop ? [career.ownShop.pos[0] + 24, career.ownShop.pos[1] + 6] : null;
+  }
+  return null;
+}
+
+const filomenaVisible = () => ride.active || scene.top || story.phase === Phase.CLIMB || !!filomenaSpot();
+const OWNER_LINES = ["Jamme, Gennà, 'e pizze se fanno fredde!", 'Sto ccà, ammore!', 'Chi va cchiù veloce, io o tu?'];
+const OWN_SHOP_WISH = [
+  'Me voglio mettere in proprio...',
+  'Na pizzeria tutta mia: chesto voglio!',
+  "Quanto costerà aprire na pizzeria? Mo' 'o chiedo a nu pizzaiolo.",
+];
+const wish = { wait: 30 };
+
+function updateFilomena(dt) {
+  if (filomena.sayT > 0) filomena.sayT -= dt;
+  if (topGennaro.sayT > 0) topGennaro.sayT -= dt;
+  filomena.moving = false;
+  if (ride.active) return updateRide(dt);
+  if (scene.top) return;
+  if (story.phase === Phase.CLIMB) {
+    // Lascia la Vespa e cammina dietro a Gennaro.
+    const d = Math.hypot(player.x - filomena.x, player.y - filomena.y);
+    filomena.a = Math.atan2(player.y - filomena.y, player.x - filomena.x);
+    if (d > 400) Object.assign(filomena, { x: player.x - 30, y: player.y });
+    else if (d > 34) {
+      const step = Math.min(d - 34, 210 * dt);
+      filomena.x += Math.cos(filomena.a) * step;
+      filomena.y += Math.sin(filomena.a) * step;
+      filomena.moving = true;
+      filomena.walk += dt * 10;
+    }
+    filomena.h = 0.5;
+    return;
+  }
+  const spot = filomenaSpot();
+  if (spot) {
+    Object.assign(filomena, { x: spot[0], y: spot[1], h: 0.5, a: Math.atan2(player.y - spot[1], player.x - spot[0]) });
+    Object.assign(filomenaVespa, { x: spot[0] + 4, y: spot[1] + 20, a: 0, v: 0 });
+    if (
+      story.phase === Phase.OWNER &&
+      !isTalking(filomena) &&
+      Math.hypot(player.x - filomena.x, player.y - filomena.y) < 200
+    )
+      if (Math.random() < dt * 0.08) say(filomena, pick(OWNER_LINES), 2.6);
+  }
+  // Dal giorno 12 Gennaro ci pensa: vuole mettersi in proprio.
+  if (story.canBuyShop && isOnStreet()) {
+    wish.wait -= dt;
+    if (wish.wait <= 0 && !isTalking(player)) {
+      wish.wait = 45 + Math.random() * 45;
+      say(player, pick(OWN_SHOP_WISH), 3.2);
+    }
+  }
+}
+
+function drawFilomena() {
+  if (scene.top || !filomenaVisible() || !isVisible(filomena.x, filomena.y)) return;
+  if (ride.active) return drawVespa(filomenaVespa, filomena, 1);
+  if (story.phase !== Phase.CLIMB) drawVespa(filomenaVespa); // parcheggiata accanto a lei
+  drawPerson(...toScreen(filomena.x, filomena.y), filomena.a, filomena, filomena.walk, filomena.moving);
+}
+
+/** On top of Castel dell'Ovo, the two of them, drawn above the roof. */
+function drawCastleTop() {
+  if (!scene.top) return;
+  const [gx, gy] = CASTLE.top;
+  for (const [who, x] of [
+    [player, gx - 9],
+    [filomena, gx + 9],
+  ]) {
+    const [sx, sy] = project(x, gy, TOP_H);
+    drawPerson(sx, sy, who === player ? 0 : Math.PI, who, 0, false);
+  }
+}
+
+// Hearts for a kiss.
+const KISS_TIME = 2.6;
+const kiss = { t: 0, x: 0, y: 0, h: 0.5 };
+function startKiss(where) {
+  const [x, y, h] = where === 'top' ? [CASTLE.top[0], CASTLE.top[1], TOP_H] : [filomena.x, filomena.y, 0.5];
+  Object.assign(kiss, { t: KISS_TIME, x, y, h });
+  sfx.coins();
+}
+
+function drawKiss() {
+  if (kiss.t <= 0) return;
+  kiss.t -= 1 / 60;
+  const [sx, sy] = project(kiss.x, kiss.y, kiss.h);
+  const k = 1 - kiss.t / KISS_TIME;
+  ctx.textAlign = 'center';
+  for (let i = 0; i < 5; i++) {
+    const phase = (k + i * 0.2) % 1;
+    ctx.globalAlpha = 1 - phase;
+    ctx.fillStyle = '#ff3d6e';
+    ctx.font = `${Math.round((10 + i * 2) * camera.zoom)}px sans-serif`;
+    ctx.fillText(
+      '❤',
+      sx + Math.sin(i * 2.1 + k * 6) * 14 * camera.zoom,
+      sy - 10 * camera.zoom - phase * 40 * camera.zoom,
+    );
+  }
+  ctx.globalAlpha = 1;
+}
+
+const hearing =
+  (who, range = HEAR_RANGE) =>
+  () =>
+    Math.hypot(player.x - who.x, player.y - who.y) < range;
+
+const STORY_SCENES = {
+  filomenaVisit: ({ tuneHint }) => !ride.active && startRide({ tuneHint }),
+  storyFired: ({ pizzeria }) => {
+    pizzaiolo.shop = pizzeria;
+    updatePizzaiolo(0);
+    startTalk({
+      lines: [
+        [pizzaiolo, "Gennà! Doje Margherite pe' nu cliente tuojo? Tu te si' miso in proprio!"],
+        [player, "Ma qua' proprio! Nun è overo, ve giuro!"],
+        [pizzaiolo, "Vattenne! Si' licenziato!"],
+        [player, 'Ma io... vabbuò. Primma porto sti Margherite.'],
+      ],
+      canHear: hearing(pizzaiolo, 600),
+      giveUp: () => !hearing(pizzaiolo, 600)(), // Gennaro se n'è già andato
+    });
+  },
+  pier: ({ done }) =>
+    startTalk({
+      lines: [
+        [filomena, 'Finalmente! Doje Margherite, belle calde.'],
+        [player, "Ma tu si' chella d''a Vespa! Si' tu ca m'hê chiammato?"],
+        [filomena, "Me chiammo Filomena. E 'e pizze 'e consegno meglio 'e te."],
+        [player, 'Chesto è tutto da vedé!'],
+        [filomena, "Però voglio nu bacio al sapore 'e Margherita... d''o secondo arrivato."],
+        [player, "Io nun so' 'o secondo!"],
+        [filomena, 'Sì, sì... vieni ccà.'],
+        ['kiss', 'pier'],
+      ],
+      canHear: hearing(filomena),
+      onEnd: () => {
+        done();
+        showBanner('Filomena', 4);
+      },
+    }),
+  castleMeet: () =>
+    startTalk({
+      lines: [
+        [filomena, "Gennà! Si' venuto."],
+        [filomena, "Lassa 'a Vespa: saglimmo ncoppa 'o castello, a pere."],
+        [player, 'Jamme!'],
+      ],
+      canHear: () => true,
+    }),
+  castleTop: ({ done }) => {
+    scene.top = true;
+    scene.hold = { x: player.x, y: player.y };
+    const [gx, gy] = CASTLE.top;
+    Object.assign(topGennaro, { x: gx - 9, y: gy, say: '', sayT: 0 });
+    Object.assign(filomena, { x: gx + 9, y: gy, h: TOP_H + 0.5, say: '', sayT: 0 });
+    talks.length = 0; // Filomena non deve finire altre frasi a terra
+    startTalk({
+      lines: [
+        [topGennaro, "Che bella Napule 'a ccà ncoppa..."],
+        [filomena, "E 'o Vesuvio, Gennà, 'o vide?"],
+        ['kiss', 'top'],
+        [topGennaro, "Dimme 'a verità: almeno so' 'o meglio vasatore 'e Napule?"],
+        [filomena, "Sì, Gennà. 'O meglio."],
+        [topGennaro, 'Allora... ce fidanzammo?'],
+        [filomena, 'Ce simmo già fidanzati, scemo!'],
+      ],
+      canHear: () => true,
+      onEnd: () => {
+        scene.top = false;
+        scene.hold = null;
+        done();
+      },
+    });
+  },
+};
+
 // Conversations in speech bubbles: one line at a time, paused while Gennaro is too far away to hear.
 const talks = [];
 const lineTime = (text) => Math.min(7, 2 + text.length * 0.06);
@@ -506,18 +827,24 @@ function startTalk({ lines, canHear, giveUp = () => false, onEnd }) {
 }
 
 function updateTalks(dt) {
+  for (const c of talks) if (c.t > 0) c.t -= dt;
+  // Una battuta alla volta: le conversazioni non si accavallano.
+  let busy = talks.some((c) => c.t > 0);
   for (const c of [...talks]) {
-    if (c.t > 0) {
-      c.t -= dt;
-      continue;
-    }
+    if (c.t > 0) continue;
     if (c.i >= c.lines.length || c.giveUp()) {
       talks.splice(talks.indexOf(c), 1);
       c.onEnd?.();
       continue;
     }
-    if (!c.canHear()) continue;
+    if (busy || !c.canHear()) continue;
+    busy = true;
     const [who, text] = c.lines[c.i++];
+    if (who === 'kiss') {
+      startKiss(text);
+      c.t = KISS_TIME;
+      continue;
+    }
     const seconds = lineTime(text);
     say(who, text, seconds);
     c.t = seconds + 0.3;
@@ -534,7 +861,10 @@ function updatePizzaiolo(dt) {
   if (shop) Object.assign(pizzaiolo, { shop, x: shop.pos[0] + 24, y: shop.pos[1] + 6 });
 }
 
-const pizzaioloVisible = () => !!pizzaiolo.shop && (career.job?.pizzeria === pizzaiolo.shop || isTalking(pizzaiolo));
+const pizzaioloVisible = () =>
+  !!pizzaiolo.shop &&
+  pizzaiolo.shop.id !== OWN_SHOP_ID && // nella pizzeria sua alla porta c'è Filomena
+  (career.job?.pizzeria === pizzaiolo.shop || isTalking(pizzaiolo));
 
 function drawPizzaiolo() {
   if (!pizzaioloVisible() || !isVisible(pizzaiolo.x, pizzaiolo.y)) return;
@@ -548,7 +878,8 @@ function drawPizzaiolo() {
   ctx.fill();
 }
 
-onTalk(({ kind, lines, pizzeria, customer, address }) => {
+onTalk((options) => {
+  const { kind, lines, pizzeria, customer, address } = options;
   if (kind === 'stage') {
     pizzaiolo.shop = pizzeria;
     updatePizzaiolo(0);
@@ -557,7 +888,10 @@ onTalk(({ kind, lines, pizzeria, customer, address }) => {
       canHear: () => Math.hypot(player.x - pizzaiolo.x, player.y - pizzaiolo.y) < HEAR_RANGE,
       giveUp: () => career.job?.pizzeria !== pizzeria, // licenziato o andato via: niente più lezioni
     });
+  } else if (kind in STORY_SCENES) {
+    STORY_SCENES[kind](options);
   } else if (kind === 'vip') {
+    Object.assign(leash, { x: player.x, y: player.y });
     // Il cliente resta accanto al suo monumento finché non hanno finito di parlare.
     Object.assign(vip, customer.look, { x: address.x + 12, y: address.y - 4, chatting: true, say: '', sayT: 0 });
     vip.order ??= { chat: true };
@@ -565,7 +899,6 @@ onTalk(({ kind, lines, pizzeria, customer, address }) => {
     startTalk({
       lines: lines.map(([who, text]) => [who === 'g' ? player : vip, text]),
       canHear: () => distance() < HEAR_RANGE + 60,
-      giveUp: () => distance() > 1200, // Gennaro se n'è andato: il cliente torna a casa
       onEnd: () => {
         vip.chatting = false;
         vip.order = null;
@@ -683,13 +1016,18 @@ function drawWorld() {
   drawVip();
   drawMechanics();
   drawPizzaiolo();
+  drawFilomena();
   drawLegend();
-  if (player.mode === 'foot') drawPerson(...toScreen(player.x, player.y), player.a, player, player.walk, player.moving);
+  if (scene.top) {
+    // Gennaro è in cima al castello: lo disegniamo lassù, dopo i palazzi.
+  } else if (player.mode === 'foot')
+    drawPerson(...toScreen(player.x, player.y), player.a, player, player.walk, player.moving);
   else if (player.mode === 'vespa') drawVespa(player.vespa, player, pizzasOnBoard());
 
   for (const t of trees) drawTree(t);
   drawEffects();
   drawBuildings(view, { playerInTunnel: isInTunnel(player.x, player.y) });
+  drawCastleTop();
   drawFunicolari(player);
   if (player.mode === 'metro') drawMetroOverlay();
 
@@ -708,7 +1046,10 @@ function drawWorld() {
   for (const m of mechanics) if (isTalking(m) && isVisible(m.x, m.y)) drawBubble(m.x, m.y, m.say);
   if (pizzaioloVisible() && isTalking(pizzaiolo)) drawBubble(pizzaiolo.x, pizzaiolo.y, pizzaiolo.say);
   if (legendVisible() && isTalking(legend)) drawBubble(legend.x, legend.y, legend.say);
+  if (filomenaVisible() && isTalking(filomena)) drawBubble(filomena.x, filomena.y, filomena.say, filomena.h);
   if (isTalking(player)) drawBubble(player.x, player.y, player.say);
+  if (scene.top && isTalking(topGennaro)) drawBubble(topGennaro.x, topGennaro.y, topGennaro.say, TOP_H + 0.5);
+  drawKiss();
   if (game.started && isOnStreet()) drawGuide(player, next);
 }
 
@@ -759,7 +1100,7 @@ function start() {
 // A saved game is put back before the city fills up, so traffic and people appear around Gennaro.
 const saved = readSave();
 if (saved) {
-  game.loaded = loadGame(career, saved);
+  game.loaded = loadGame(career, saved, story);
   if (!game.loaded) location.reload();
 }
 
