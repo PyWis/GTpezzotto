@@ -1133,17 +1133,22 @@ document.getElementById('mute').onclick = () => {
   setMuted(toggleMute());
 };
 document.getElementById('go').onclick = start;
-// Le due mappe: cambiare mappa ricarica la pagina (ognuna ha il suo salvataggio).
-for (const b of document.querySelectorAll('#maps button')) {
-  const id = Number(b.dataset.map);
-  b.classList.toggle('on', id === MAP_ID);
-  b.onclick = () => {
-    if (id === MAP_ID) return;
+// Le due mappe sono link (?mappa=1|2): cambiare mappa ricarica la pagina, e ognuna ha il suo salvataggio.
+const mapLinks = [...document.querySelectorAll('#maps a')];
+for (const a of mapLinks) {
+  const id = Number(a.dataset.map);
+  a.classList.toggle('on', id === MAP_ID);
+  a.onclick = (e) => {
+    if (id === MAP_ID) return e.preventDefault(); // è già questa
     chooseMap(id);
-    game.resetting = true; // niente salvataggio sulla mappa sbagliata mentre si ricarica
-    location.search = `?mappa=${id}`;
+    game.resetting = true; // niente salvataggio mentre si cambia mappa
   };
 }
+// Dalla tastiera: 1 o 2 nella schermata iniziale.
+addEventListener('keydown', (e) => {
+  if (game.started || !['1', '2'].includes(e.key)) return;
+  mapLinks.find((a) => a.dataset.map === e.key)?.click();
+});
 document.getElementById('pause').onclick = () => playing() && pause();
 if (game.loaded) {
   document.getElementById('go').textContent = `CONTINUA · GIORNO ${career.day}`;

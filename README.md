@@ -116,7 +116,9 @@ fra Via Mezzocannone e Via Duomo): nuovi vicoli (Vico Sedil Capuano, Vico Zuroli
 Vicaria Vecchia, Via Forcella, Vico della Pace), San Lorenzo Maggiore, la Chiesa dei Girolamini e Piazza Nicola Amore
 sul Rettifilo.
 
-Si può anche aprire direttamente una mappa con `?mappa=1` o `?mappa=2` nell'indirizzo.
+Si può anche aprire direttamente una mappa con `?mappa=1` o `?mappa=2` nell'indirizzo, o premere **1** / **2** nella
+schermata iniziale. Se un salvataggio è stato fatto su una versione diversa della stessa mappa, la partita continua ma
+Gennaro riparte da Piazza del Plebiscito (e nessuno ricompare mai dentro un muro).
 
 ## Comandi
 
