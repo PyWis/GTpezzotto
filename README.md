@@ -23,7 +23,7 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
 - La mancia si calcola su **ogni singola consegna**: se servi una famiglia **entro 40 secondi** dal ritiro (o dalla
   consegna precedente) ti lascia una **mancia dal 5% al 20%** della sua parte d'ordine. I 40 secondi ripartono dopo ogni
   famiglia.
-- Paga per ogni ordine: **10 €** fissi (solo se hai servito almeno una famiglia) + il **10%** del valore delle pizze
+- Paga per ogni ordine: **2 €** fissi (solo se hai servito almeno una famiglia) + il **10%** del valore delle pizze
   consegnate + le mance.
 - Per ogni pizza non consegnata c'è il **5% di probabilità di essere licenziato**.
 - **Al massimo 12 ordini al giorno.** L'**11°** ordine è del **calciatore** (se oggi non è ancora venuto), altrimenti
@@ -53,10 +53,12 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
   - La prima è sempre **Lucia**, che spiega a Gennaro che in città ci sono clienti che vogliono solo lui.
   - Dal ritiro ci sono **80 secondi** per consegnare; **30 secondi** dopo il ritiro arriva già l'ordine successivo.
   - A ogni consegna Gennaro e il cliente **chiacchierano a fumetti**, senza fermare il gioco: un dialogo per il
-    primo incontro, uno per le volte dopo. Il cliente resta accanto al monumento finché non hanno finito.
+    primo incontro, uno per le volte dopo. Il cliente resta accanto al monumento finché non hanno finito, e Gennaro
+    non può allontanarsi più di **20 metri** finché la conversazione non è finita.
     Paga e mance come un ordine normale; le pizze perse contano per il licenziamento.
-- **Officina 'O Turbo** (Fuorigrotta, Via Leopardi): portaci la Vespa e per **1000 €** la modificano; quella Vespa va il
-  **20% più veloce**.
+- **Officina 'O Turbo** (Fuorigrotta, Via Leopardi): portaci la Vespa e la truccano per **2000 €**, oppure **1000 €**
+  subito e **150 € a sera** per gli 8 giorni successivi. Quella Vespa va il **20% più veloce** e, da quel momento, gli
+  ordini arrivano fino a **5 famiglie** e **12 pizze** (da 5 a 12).
 - **Vespa ammaccata**: ogni urto (contro un muro o un'auto) la rallenta dello **0,1%**, fino a un minimo del 50%. La si
   ripara solo all'**Officina Don Peppe in Via Gianturco**, per **3 € a punto** perso. I due meccanici non si sopportano:
   quello di Gianturco giura di fare solo cose pulite e che l'altro prima o poi ti fa finire a **Poggioreale** (c'è il
@@ -65,6 +67,26 @@ Sei **Gennaro**, disoccupato. Fatti assumere da una pizzeria, consegna le pizze 
 - **???**: c'è una missione segreta. Si sa solo che arriva una volta sola, che c'entra lo stadio e che dal giorno 8 per
   strada se ne parla. Chi la porta a termine si toglie la maglia rossa e indossa quella **azzurra**: da quel momento ogni
   calciatore gli lascia **10 €** in più, **per sempre** (il vantaggio resta anche iniziando una nuova partita).
+
+### La storia di Filomena
+
+- **Giorni 3 e 4**: una ragazza in Vespa, ogni tanto, si avvicina a Gennaro e lo saluta (2 volte il 3° giorno, 3 il 4°).
+  Gennaro, a fumetti: «Ma chesta chi è?».
+- **Giorno 5**: dopo 15 minuti squilla il telefono: 2 Margherite al **Pontile Nord**, pagate dal cliente. Quando Gennaro
+  le ritira, il pizzaiolo lo **licenzia** («te si' miso in proprio!»), Gennaro nega, e **il tempo si ferma**. Al pontile
+  c'è la ragazza della Vespa: si chiama **Filomena**, dice di consegnare le pizze meglio di lui e vuole un bacio al
+  sapore di Margherita «dal secondo arrivato». Gennaro non è il secondo, e lei lo bacia. La giornata finisce lì.
+- **Giorni 6 e 7**: Filomena passa una volta al giorno; se la Vespa non è truccata, gli dice di truccarla.
+- **Giorno 8**: solo se Gennaro ha una **Vespa truccata**, altrimenti la storia finisce qui. A fine giornata il tempo non
+  va avanti finché Gennaro non va sotto **Castel dell'Ovo**: Filomena lo porta su, **a piedi**. In cima lui la bacia e le
+  chiede se almeno è il miglior baciatore di Napoli. Lei dice di sì: **fidanzati**.
+- **Dal giorno 12**: ogni tanto Gennaro dice che vuole mettersi in proprio, e in qualunque pizzeria può chiedere quanto
+  costa aprirne una: **200 € al giorno** di licenza, più **5000 €** anticipati (oppure **2000 €** e **150 € al giorno per
+  18 giorni**). Se accetta, il tempo si ferma e Gennaro va dove vuole e preme **E** per aprire la sua pizzeria (lontano
+  dalle altre). Filomena sta fuori dal locale mentre lui consegna. Nella pizzeria sua non c'è paga fissa: Gennaro tiene
+  il **50%** di ogni consegna (più le mance), non può essere licenziato, e le spese per vivere salgono a **150-300 €**.
+
+Le rate e la licenza si pagano ogni sera e compaiono nel resoconto di fine giornata.
 
 ### Salvataggio e pausa
 
@@ -107,7 +129,8 @@ e apri `http://localhost:8080`. Funziona così com'è anche su GitHub Pages.
 npm test
 ```
 
-I test (`tests/career.test.js`) verificano le regole: assunzioni segrete, lo stage, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, i clienti speciali, l'officina, la riparazione, la missione segreta, il salvataggio, spese giornaliere e game over.
+I test (`tests/career.test.js`, `tests/story.test.js`) verificano le regole: assunzioni segrete, lo stage, la Vespa
+truccata e le rate, la pizzeria di Gennaro, la storia di Filomena, riassunzione dopo 10 giorni, ordini e ordini anticipati, mance per singola consegna, paga, licenziamenti, consegne extra, il calciatore e il suo bonus, i clienti speciali, l'officina, la riparazione, la missione segreta, il salvataggio, spese giornaliere e game over.
 
 ## La città
 
@@ -130,6 +153,7 @@ src/
   entities/            Gennaro, Vespe, pedoni, traffico, funicolari e metro
   game/
     career.js          regole del lavoro (logica pura, testata)
+    story.js           la storia di Filomena: quando passa, telefonata, pontile, castello, pizzeria propria
     addresses.js       indirizzi casuali dei clienti
     save.js            salvataggio nel browser (localStorage)
     job.js             collega la carriera al gioco: pizzerie, notifiche, dialoghi

@@ -60,7 +60,7 @@ export const RULES = Object.freeze({
   familiesPerOrder: 3,
   maxPizzasPerFamily: 4,
   firingChancePerPizza: 0.05, // per ogni pizza non consegnata
-  basePay: 10, // € per ogni consegna con almeno una famiglia servita
+  basePay: 2, // € per ogni consegna con almeno una famiglia servita
   commission: 0.1, // 10% del valore consegnato
   openings: 2, // pizzerie che assumono (segreto finché non chiedi)
   rehireAfterDays: 10, // dopo che te ne vai, quella pizzeria potrebbe riprenderti
@@ -90,8 +90,28 @@ export const RULES = Object.freeze({
     blessedTip: 10, // € in più da ogni calciatore, dopo aver servito il Dio del Calcio (per sempre)
   },
   tuning: {
-    cost: 1000, // l'officina di Fuorigrotta
+    cost: 2000, // l'officina di Fuorigrotta, tutto subito…
+    deposit: 1000, // …oppure 1000 € subito…
+    installment: { amount: 150, days: 8 }, // …e 150 € al giorno per gli 8 giorni successivi
     speed: 1.2, // la Vespa modificata va il 20% più veloce
+    familiesPerOrder: 5, // e con la Vespa truccata gli ordini arrivano fino a 5 famiglie…
+    pizzasPerOrder: [5, 12], // …e fino a 12 pizze
+  },
+  ownShop: {
+    fromDay: 12, // dal giorno 12 (se fidanzato con Filomena) Gennaro può aprire una pizzeria sua
+    cost: 5000, // tutto subito…
+    deposit: 2000, // …oppure 2000 € subito…
+    installment: { amount: 150, days: 18 }, // …e 150 € al giorno per 18 giorni
+    licence: 200, // € al giorno di licenza, per sempre
+    share: 0.5, // il 50% di ogni consegna (niente fisso)
+    livingCost: [150, 300], // da padrone si spende di più
+    minDistance: 12 * TILE, // px dalle altre pizzerie
+  },
+  story: {
+    visits: { 3: 2, 4: 3, 6: 1, 7: 1 }, // quante volte Filomena saluta Gennaro, per giorno
+    callDay: 5, // il giorno della telefonata…
+    callAfter: 15 * 60, // …dopo 15 minuti
+    castleDay: 8, // a fine giornata, se la Vespa è truccata: Castel dell'Ovo
   },
   wear: {
     perBump: 0.001, // ogni urto la Vespa perde lo 0,1% della sua velocità (si accumula)

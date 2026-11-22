@@ -42,7 +42,11 @@ export const OrderKind = Object.freeze({
   FOOTBALLER: 'footballer',
   LEGEND: 'legend',
   VIP: 'vip',
+  STORY: 'story', // le 2 Margherite per il Pontile Nord (la storia di Filomena)
 });
+
+/** Gennaro's own pizzeria, once he opens it. */
+export const OWN_SHOP_ID = 'gennaro';
 
 /** Orders that belong to the job (the others don't make the employer angry, nor stay behind if you quit). */
 const isJobOrder = (o) => o.kind === OrderKind.REGULAR || o.kind === OrderKind.FOOTBALLER || o.kind === OrderKind.VIP;
@@ -88,6 +92,10 @@ export class Career {
     this.vipDay = 0; // l'ultimo giorno in cui ha chiamato un cliente speciale (uno al giorno)
     this.vipVisits = new Map(); // cliente speciale → quante volte Gennaro gli ha portato le pizze
     this.stageLeft = rules.stage?.orders ?? 0; // le prime consegne della partita sono di prova (non pagate)
+    this.debts = []; // rate da pagare a fine giornata: [{ label, amount, daysLeft }]
+    this.ownShop = null; // la pizzeria di Gennaro, quando la apre
+    this.shopBought = false; // pagata, ma non ancora aperta (Gennaro sceglie dove)
+    this.timeLimit = null; // se non è null, il tempo non va oltre: la storia ha fermato il giorno
     this.ledger = emptyLedger(1); // conti della giornata in corso
     this.rollOpenings();
   }
@@ -104,14 +112,20 @@ export class Career {
   endDay() {
     const { rules } = this;
     const ledger = this.ledger;
-    const living = round2(randRange(...rules.livingCost, this.rng));
-    this.wallet = round2(this.wallet - living);
+    const living = round2(randRange(...(this.ownShop ? rules.ownShop.livingCost : rules.livingCost), this.rng));
+    // Rate (Vespa, pizzeria) e licenza: si pagano ogni sera.
+    const charges = this.debts.map((d) => ({ label: d.label, amount: d.amount }));
+    for (const d of this.debts) d.daysLeft--;
+    this.debts = this.debts.filter((d) => d.daysLeft > 0);
+    if (this.ownShop) charges.push({ label: 'Licenza della pizzeria', amount: rules.ownShop.licence });
+    this.wallet = round2(this.wallet - living - sum(charges, (c) => c.amount));
     this.daysInRed = this.wallet < 0 ? this.daysInRed + 1 : 0;
     const pay = ledger.pay;
     this.emit('dayEnded', {
       ledger,
       earned: round2(pay.base + pay.commission + pay.tips + pay.bonus),
       living,
+      charges,
       wallet: this.wallet,
       daysInRed: this.daysInRed,
     });
@@ -141,7 +155,7 @@ export class Career {
   }
 
   rollOpenings() {
-    const candidates = this.pizzerias.filter((p) => !this.isBanned(p.id)).map((p) => p.id);
+    const candidates = this.pizzerias.filter((p) => !this.isBanned(p.id) && p.id !== OWN_SHOP_ID).map((p) => p.id);
     this.openings = shuffle(candidates, this.rng).slice(0, this.rules.openings);
     this.asked.clear();
   }
@@ -177,7 +191,7 @@ export class Career {
 
   /** Gennaro se ne va: quella pizzeria non lo riprende per `rehireAfterDays` giorni. */
   quit() {
-    if (this.status !== 'employed') return false;
+    if (this.status !== 'employed' || this.ownShop) return false; // dalla propria pizzeria non ci si licenzia
     this.leaveJob('quit');
     return true;
   }
@@ -232,7 +246,7 @@ export class Career {
   /** Next order from the employer: usually a normal one, once in a while a special customer or the footballer. */
   createOrder() {
     const { rules, rng, job } = this;
-    if (this.stageLeft > 0) return this.createStageOrder();
+    if (this.stageLeft > 0 && !this.ownShop) return this.createStageOrder(); // nella pizzeria sua niente prova
     const forced = this.scheduledKind();
     const vip = forced ? (forced === OrderKind.VIP ? this.nextVip() : null) : this.rollVip();
     const footballer = forced ? forced === OrderKind.FOOTBALLER : !vip && rng() < rules.footballer.chance;
@@ -259,11 +273,14 @@ export class Career {
       });
       this.footballerDay = this.day;
     } else {
-      const total = randInt(...rules.pizzasPerOrder, rng);
+      // Con la Vespa truccata gli ordini sono più grandi: fino a 5 famiglie e 12 pizze.
+      const big = this.hasTunedVespa && rules.tuning.familiesPerOrder;
+      const families = big ? rules.tuning.familiesPerOrder : rules.familiesPerOrder;
+      const total = randInt(...(big ? rules.tuning.pizzasPerOrder : rules.pizzasPerOrder), rng);
       order = this.addOrder({
         kind: OrderKind.REGULAR,
         pizzeria: job.pizzeria,
-        counts: splitPizzas(total, rules.familiesPerOrder, rules.maxPizzasPerFamily, rng),
+        counts: splitPizzas(total, families, rules.maxPizzasPerFamily, rng),
         time: rules.orderTime,
       });
     }
@@ -442,14 +459,70 @@ export class Career {
     return this.tunedVespas.has(vespa);
   }
 
-  /** Fuorigrotta: the mechanic souped up this Vespa (×1.2) for 1000 €. */
-  tune(vespa) {
-    const { cost } = this.rules.tuning;
-    if (!vespa || this.isTuned(vespa) || this.wallet < cost || this.status === 'broke') return false;
-    this.wallet = round2(this.wallet - cost);
+  get hasTunedVespa() {
+    return this.tunedVespas.size > 0;
+  }
+
+  /**
+   * Fuorigrotta: the mechanic soups up this Vespa (×1.2, bigger orders). `plan`: 'full' pays everything now,
+   * 'installments' pays the deposit now and the rest a bit every evening.
+   */
+  tune(vespa, plan = 'full') {
+    const { tuning } = this.rules;
+    const now = plan === 'installments' ? tuning.deposit : tuning.cost;
+    if (!vespa || this.isTuned(vespa) || this.wallet < now || this.status === 'broke') return false;
+    this.wallet = round2(this.wallet - now);
+    if (plan === 'installments') this.addDebt('Rata della Vespa', tuning.installment);
     this.tunedVespas.add(vespa);
-    this.emit('tuned', { vespa, cost });
+    this.emit('tuned', { vespa, cost: now, plan });
     return true;
+  }
+
+  addDebt(label, { amount, days }) {
+    this.debts.push({ label, amount, daysLeft: days });
+  }
+
+  // ---------------------------------------------------------------- la pizzeria di Gennaro
+  /** Pays for his own pizzeria ('full' or 'installments'); then he chooses where to open it. */
+  buyShop(plan = 'full') {
+    const { ownShop } = this.rules;
+    const now = plan === 'installments' ? ownShop.deposit : ownShop.cost;
+    if (this.ownShop || this.shopBought || this.wallet < now || this.status === 'broke') return false;
+    this.wallet = round2(this.wallet - now);
+    if (plan === 'installments') this.addDebt('Rata della pizzeria', ownShop.installment);
+    this.shopBought = true;
+    this.emit('shopBought', { cost: now, plan });
+    return true;
+  }
+
+  /** Is this a good spot for the new pizzeria (far enough from the others)? */
+  canOpenShopAt([x, y]) {
+    const min = this.rules.ownShop.minDistance;
+    return (
+      this.shopBought && !this.ownShop && this.pizzerias.every((p) => Math.hypot(p.pos[0] - x, p.pos[1] - y) >= min)
+    );
+  }
+
+  /** Opens the pizzeria at `pos`: from now on the orders come from here, and Gennaro keeps half of each. */
+  openOwnShop(pos, look = {}) {
+    if (!this.canOpenShopAt(pos)) return false;
+    // Lascia il vecchio lavoro senza litigare: nessuna pizzeria gli chiude la porta.
+    for (const order of this.activeOrders) if (isJobOrder(order)) this.closeOrder(order, { judged: false });
+    const shop = this.addOwnShop({ id: OWN_SHOP_ID, name: "Pizzeria 'O Gennaro", color: '#ff6fd8', ...look, pos });
+    this.status = 'employed';
+    this.employer = shop.id;
+    this.openings = [];
+    this.stageLeft = 0;
+    this.job = { pizzeria: shop, nextOrderAt: this.time, earlyOrder: false };
+    this.emit('shopOpened', { pizzeria: shop });
+    return true;
+  }
+
+  addOwnShop(shop) {
+    this.ownShop = shop;
+    this.shopBought = false;
+    if (!this.pizzeria(shop.id)) this.pizzerias.push(shop);
+    return shop;
   }
 
   // ---------------------------------------------------------------- officina di Via Gianturco
@@ -485,8 +558,8 @@ export class Career {
       stop.tip = this.rules.legend.tip; // il Dio del Calcio lascia sempre la sua mancia
     } else if (order.kind === OrderKind.FOOTBALLER) {
       stop.tip = this.blessed ? this.rules.footballer.blessedTip : 0;
-    } else if (order.stage) {
-      stop.tip = 0; // in prova niente mance
+    } else if (order.stage || order.kind === OrderKind.STORY) {
+      stop.tip = 0; // in prova niente mance; le Margherite del pontile si pagano e basta
     } else if (this.tipTimeLeft(order) > 0) {
       stop.tip = round2(orderValue(stop) * randRange(...this.rules.tipRange, this.rng));
     }
@@ -511,9 +584,12 @@ export class Career {
     const missed = sum(order.stops, (x) => (x.delivered ? 0 : x.pizzas.length));
     // Al calciatore la pizza la offre la casa; le consegne di prova non si pagano.
     const free = order.kind === OrderKind.FOOTBALLER || !!order.stage;
+    // Nella pizzeria sua Gennaro non ha il fisso ma tiene il 50%; le 2 Margherite del Pontile le pagano a lui.
+    const own = this.ownShop && order.pizzeria === this.ownShop;
+    const share = order.kind === OrderKind.STORY ? 1 : own ? rules.ownShop.share : rules.commission;
     const pay = {
-      base: delivered.length && !free ? rules.basePay : 0, // il fisso solo se hai consegnato qualcosa
-      commission: free ? 0 : round2(rules.commission * sum(delivered, orderValue)),
+      base: delivered.length && !free && !own && order.kind !== OrderKind.STORY ? rules.basePay : 0, // il fisso solo se hai consegnato qualcosa
+      commission: free ? 0 : round2(share * sum(delivered, orderValue)),
       tips: round2(sum(delivered, (x) => x.tip)),
     };
     // La consegna extra vale il doppio; il bonus del calciatore si aggiunge a tutto.
@@ -540,7 +616,7 @@ export class Career {
     }
 
     // Un lavoretto per un'altra pizzeria: chi ti ha assunto non ti licenzia per quello.
-    if (judged && missed && !order.stage && isJobOrder(order) && order.pizzeria.id === this.employer) {
+    if (judged && missed && !order.stage && !own && isJobOrder(order) && order.pizzeria.id === this.employer) {
       let fired = false;
       for (let k = 0; k < missed && !fired; k++) fired = this.rng() < rules.firingChancePerPizza;
       if (fired) this.leaveJob('fired');
@@ -551,7 +627,9 @@ export class Career {
   /** Advance the clock. `courier` = { x, y, speed } in world px. */
   update(dt, courier) {
     if (this.status === 'broke') return;
-    this.time += dt;
+    // La storia può fermare il giorno: il tempo non va oltre `timeLimit`.
+    this.time =
+      this.timeLimit === null ? this.time + dt : Math.max(this.time, Math.min(this.time + dt, this.timeLimit));
     while (this.status !== 'broke' && this.day > this.ledger.day) this.endDay();
     if (this.status === 'broke') return;
 
@@ -621,11 +699,16 @@ export class Career {
       soldOutDay: this.soldOutDay,
       vipVisits: [...this.vipVisits],
       stageLeft: this.stageLeft,
+      debts: this.debts,
+      ownShop: this.ownShop && { name: this.ownShop.name, color: this.ownShop.color, pos: this.ownShop.pos },
+      shopBought: this.shopBought,
+      timeLimit: this.timeLimit,
     };
   }
 
   /** Restores a snapshot made by `serialize` (same `vespas` list). */
   restore(data, vespas = []) {
+    if (data.ownShop) this.addOwnShop({ id: OWN_SHOP_ID, ...data.ownShop });
     const orders = new Map(
       data.orders.map((o) => [o.number, { ...o, pizzeria: this.pizzeria(o.pizzeria) ?? this.pizzerias[0] }]),
     );
@@ -653,6 +736,9 @@ export class Career {
       soldOutDay: data.soldOutDay ?? 0,
       vipVisits: new Map(data.vipVisits ?? []),
       stageLeft: data.stageLeft ?? 0, // i salvataggi di prima dello stage non lo rifanno
+      debts: data.debts ?? [],
+      shopBought: !!data.shopBought,
+      timeLimit: data.timeLimit ?? null,
     });
     if (this.status === 'employed' && !this.job) this.status = 'unemployed';
   }

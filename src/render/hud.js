@@ -103,7 +103,14 @@ function panelLines(career, player) {
     else if (next > 0) add(`Prossimo ordine tra ${clock(next)}`, '#cfc6b0');
   }
 
+  if (career.timeLimit !== null && career.time >= career.timeLimit) add('⏸ IL TEMPO È FERMO', '#ff4f7b');
+
   for (const order of career.activeOrders) {
+    if (order.kind === 'story') {
+      add('2 MARGHERITE · PONTILE NORD', '#ff4f7b', 1);
+      if (!order.pickedUp) add(`  ritirale da ${order.pizzeria.name}`, '#ffffff');
+      continue;
+    }
     const t = career.timeLeft(order);
     const urgent = t < 30;
     const tip = career.tipTimeLeft(order);
