@@ -11,6 +11,7 @@ import {
   LANDMARKS,
   MAP_H,
   MAP_W,
+  OY,
   NISIDA,
   PARKINGS,
   PARKS,
@@ -293,16 +294,16 @@ function buildMostraDOltremare() {
     grid.plaza[i] = t === Tile.PLAZA ? pi : -1;
   };
   const area = (x0, y0, x1, y1, t, test = () => true) => {
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) if (test(x + 0.5, y + 0.5)) set(x, y, t);
+    for (let y = y0 + OY; y < y1 + OY; y++) for (let x = x0; x < x1; x++) if (test(x + 0.5, y + 0.5)) set(x, y, t);
   };
-  const exedra = (r) => (x, y) => Math.hypot(x - 62.5, y - 85) <= r;
+  const exedra = (r) => (x, y) => Math.hypot(x - 62.5, y - 85 - OY) <= r;
   area(60, 68, 64, 89, Tile.PLAZA);
   area(56, 80, 69, 88, Tile.PLAZA);
   area(57, 85, 69, 90, Tile.PLAZA, exedra(4.2));
   area(57, 81, 68, 85, Tile.SEA);
   area(58, 85, 68, 89, Tile.SEA, exedra(3.1));
   area(61, 72, 63, 79, Tile.SEA);
-  for (let x = 54; x < 71; x++) set(x, 72, x >= 60 && x < 64 ? Tile.SEA : Tile.PLAZA);
+  for (let x = 54; x < 71; x++) set(x, 72 + OY, x >= 60 && x < 64 ? Tile.SEA : Tile.PLAZA);
 }
 
 const NEIGHBOURS_4 = [
@@ -341,7 +342,7 @@ function addCoast() {
         if (x < 44 && y + 0.5 > coastY(x + 0.5) - 3.5) grid.tile[i] = Tile.SAND;
       }
       // Scogliera lungo il lungomare.
-      if (before[i] === Tile.SEA && x >= 96 && x < 190 && y > 80 && grid.noise[i] < 0.6) {
+      if (before[i] === Tile.SEA && x >= 96 && x < 190 && y - OY > 80 && grid.noise[i] < 0.6) {
         if (touches((t) => t !== Tile.SEA && t !== Tile.ROCK)) grid.tile[i] = Tile.ROCK;
       }
     }

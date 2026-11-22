@@ -2,7 +2,7 @@
 
 import { TAU } from '../core/math.js';
 import { time } from '../core/time.js';
-import { FOUNTAINS, TILE, WATER_JETS } from '../data/city.js';
+import { FOUNTAINS, OY, TILE, WATER_JETS } from '../data/city.js';
 import { camera, project, toScreen } from './camera.js';
 import { ctx, disc, polyline, screen } from './canvas.js';
 
@@ -46,13 +46,13 @@ function drawWaterJets() {
 
 const WHEEL_COLORS = ['#e64b3c', '#f5d142', '#3d7fd0', '#fff', '#3a9a5b', '#e98aa8'];
 const coasterAt = (an) =>
-  project((46 + Math.cos(an) * 3) * TILE, (85.5 + Math.sin(an) * 1.8) * TILE, 1.8 + Math.sin(an * 2) * 0.8);
+  project((46 + Math.cos(an) * 3) * TILE, (85.5 + OY + Math.sin(an) * 1.8) * TILE, 1.8 + Math.sin(an * 2) * 0.8);
 
 /** Edenlandia: a spinning carousel and a little roller coaster. */
 function drawFunfair() {
-  if (!onScreen(toScreen(46 * TILE, 83 * TILE), 400)) return;
+  if (!onScreen(toScreen(46 * TILE, (83 + OY) * TILE), 400)) return;
   const T = time.t;
-  const c = project(44.6 * TILE, 80.6 * TILE, 1.6);
+  const c = project(44.6 * TILE, (80.6 + OY) * TILE, 1.6);
   const R = 1.6 * TILE * camera.zoom * c[2];
   for (let j = 0; j < 12; j++) {
     ctx.fillStyle = WHEEL_COLORS[j % 6];

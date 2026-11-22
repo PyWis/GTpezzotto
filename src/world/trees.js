@@ -1,12 +1,12 @@
 import { hash } from '../core/math.js';
-import { MAP_H, MAP_W, PLAZAS, TILE } from '../data/city.js';
+import { MAP_H, MAP_W, OY, PLAZAS, TILE } from '../data/city.js';
 import { grid, index } from './map.js';
 import { Tile } from './tiles.js';
 
 /** Trees and palms, placed once from the tile noise. */
 export const trees = [];
 
-const palmsInPark = (x, y) => ((y >= 68 && x < 104) || (x >= 116 && x < 164 && y >= 80)) && hash(x, y, 9) < 0.6;
+const palmsInPark = (x, y) => (((y -= OY) >= 68 && x < 104) || (x >= 116 && x < 164 && y >= 80)) && hash(x, y, 9) < 0.6;
 const tree = (x, y, palm, scale) => trees.push({ x: (x + 0.5) * TILE, y: (y + 0.5) * TILE, palm, scale });
 
 for (let y = 0; y < MAP_H; y++)
@@ -30,7 +30,7 @@ for (let y = 0; y < MAP_H; y++)
         if (n < 0.04) tree(x, y, false, 0.7);
         break;
       case Tile.SIDEWALK: // the palms of Via Caracciolo
-        if (y === 91 && x >= 104 && x < 158 && x % 3 === 0) tree(x, y, true, 1);
+        if (y - OY === 91 && x >= 104 && x < 158 && x % 3 === 0) tree(x, y, true, 1);
         break;
       case Tile.PLAZA:
         if (PLAZAS[grid.plaza[i]].palms && n < 0.06) tree(x, y, true, 0.9);

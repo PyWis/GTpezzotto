@@ -1,9 +1,39 @@
 // Geografia di Napoli in coordinate-tile (1 tile = TILE px). Tutto è nello stesso
 // sistema di riferimento: ovest = Bagnoli, est = San Giovanni a Teduccio.
 
+// Due mappe: la 1 (quella classica, col radar) e la 2, «Napoli Grande»: la stessa città spostata più in
+// basso di OY righe, con sopra la Napoli nord (Soccavo, Arenella, Capodimonte, Scampia, Capodichino) e
+// senza radar. La scelta si fa nella schermata iniziale e vale dal caricamento della pagina.
+const MAP_KEY = 'napule.mappa';
+
+function readMapChoice() {
+  try {
+    const q = new URLSearchParams(globalThis.location?.search ?? '').get('mappa');
+    if (q === '1' || q === '2') return Number(q);
+    return globalThis.localStorage?.getItem(MAP_KEY) === '2' ? 2 : 1;
+  } catch {
+    return 1;
+  }
+}
+
+/** Remembers the map for the next page load (the page must be reloaded to switch). */
+export function chooseMap(id) {
+  try {
+    globalThis.localStorage?.setItem(MAP_KEY, String(id));
+  } catch {
+    // senza localStorage resta il parametro ?mappa= nell'indirizzo
+  }
+}
+
+export const MAP_ID = readMapChoice();
+export const OY = MAP_ID === 2 ? 64 : 0; // righe aggiunte a nord nella mappa 2
+export const HAS_RADAR = MAP_ID !== 2;
+/** From the coordinates of map 1 (in tiles) to the map in use. */
+export const at = (x, y) => [x, y + OY];
+
 export const TILE = 32;
 export const MAP_W = 354;
-export const MAP_H = 112;
+export const MAP_H = 112 + OY;
 
 const road = (name, kind, width, path) => ({ name, kind, width, path });
 
@@ -255,9 +285,20 @@ const DISTRICT_RULES = [
 ];
 
 export function districtAt(x, y) {
-  for (const [name, test] of DISTRICT_RULES) if (test(x, y)) return name;
+  if (y < OY) for (const [name, test] of NORTH_DISTRICT_RULES) if (test(x, y)) return name;
+  for (const [name, test] of DISTRICT_RULES) if (test(x, y - OY)) return name;
   return 'Napoli';
 }
+
+/** I quartieri della Napoli nord (solo mappa 2), in coordinate della mappa 2. */
+const NORTH_DISTRICT_RULES = [
+  ['Soccavo', (x) => x < 100],
+  ['Arenella', (x) => x < 158],
+  ['Scampia', (x, y) => y < 21 && x < 264],
+  ['Capodimonte', (x) => x < 264],
+  ['Capodichino', (x, y) => y < 52],
+  ['Poggioreale', () => true],
+];
 
 /** Colori della mappa per quartiere. */
 export const DISTRICT_COLORS = {
@@ -278,6 +319,11 @@ export const DISTRICT_COLORS = {
   Poggioreale: '#d9d4cc',
   'San Giovanni a Teduccio': '#ddd4c8',
   Vesuvio: '#cbbfa8',
+  Soccavo: '#efe1cf',
+  Arenella: '#e6def0',
+  Capodimonte: '#d9ead0',
+  Scampia: '#d6d6d6',
+  Capodichino: '#dedad0',
   Napoli: '#eeeeee',
 };
 
@@ -315,6 +361,11 @@ const DISTRICT_ZONE = {
   'Piazza Garibaldi': 'garibaldi',
   Poggioreale: 'garibaldi',
   Porto: 'port',
+  Soccavo: 'suburb',
+  Arenella: 'vomero',
+  Capodimonte: 'garibaldi',
+  Scampia: 'business',
+  Capodichino: 'industrial',
 };
 
 export const zoneOf = (district) => ZONES[DISTRICT_ZONE[district] ?? 'centro'];
@@ -329,4 +380,94 @@ export function coastY(x) {
     if (x <= bx) return ay + ((by - ay) * (x - ax)) / (bx - ax);
   }
   return pts[pts.length - 1][1];
+}
+
+// ---------------------------------------------------------------------------
+// Mappa 2: tutto più giù di OY righe, e sopra la Napoli nord con le sue strade
+// ---------------------------------------------------------------------------
+const EXIT = -30; // le strade che arrivano qui escono dalla città
+
+function shiftAll() {
+  const pt = (p) => (p[1] = p[1] + OY);
+  const rect = (r) => ((r[1] += OY), (r[3] += OY));
+  COASTLINE.forEach(pt);
+  // Le strade che uscivano a nord ora attraversano la Napoli nord: le loro uscite restano fuori dalla mappa.
+  for (const r of ROADS) for (const p of r.path) if (p[1] !== EXIT) pt(p);
+  for (const list of [PARKINGS, PLAZAS, PARKS, QUAYS, BEACHES]) for (const x of list) rect(x.rect);
+  BROWNFIELDS.forEach(rect);
+  for (const lm of LANDMARKS) (lm.rect ? rect(lm.rect) : pt(lm.center));
+  for (const f of FOUNTAINS) pt(f.center);
+  WATER_JETS.forEach(pt);
+  for (const f of FUNICULARS) (pt(f.lower.at), pt(f.upper.at));
+  for (const line of METRO_LINES) for (const st of line.stations) pt(st.at);
+  HILL.y0 += OY;
+  pt(VESUVIUS.center);
+  pt(NISIDA.center);
+  rect(STADIUM_GATE.rect);
+  pt(STADIUM_GATE.pitch);
+  rect(RAILYARD.rect);
+  RAILYARD.trackY += OY;
+}
+
+/** Ends a road that used to leave town to the north at `y` (map 2), where the new streets begin. */
+function endAt(name, y) {
+  for (const r of ROADS.filter((r) => r.name === name))
+    for (const end of [r.path[0], r.path.at(-1)]) if (end[1] === EXIT) end[1] = y;
+}
+
+function addNorth() {
+  endAt('Via Terracina', 44);
+  endAt('Via Kerbaker', 44);
+  endAt('Via Pessina', 52);
+  endAt('Via Poggioreale', 52);
+  ROADS.push(
+    // Soccavo e Arenella (a ovest della Tangenziale, che sale dritta verso nord).
+    road('Via Epomeo', 'street', 2, [[EXIT, 44], [52, 44]]),
+    road('Via Pigna', 'street', 2, [[52, 44], [100, 44]]),
+    road('Via Pietravalle', 'street', 2, [[100, 44], [128, 44]]),
+    road('Viale Traiano', 'main', 3, [[52, 44], [52, EXIT]]),
+    road('Via Domenico Fontana', 'street', 2, [[128, 44], [128, EXIT]]),
+    road('Via Cinthia', 'street', 2, [[EXIT, 20], [52, 20]]),
+    road('Via Camaldolilli', 'street', 2, [[52, 20], [128, 20]]),
+    road('Via Piave', 'street', 2, [[100, 44], [100, 20]]),
+    // Capodimonte, Scampia, Capodichino.
+    road('Corso Amedeo di Savoia', 'main', 3, [[181, 52], [181, EXIT]]),
+    road('Via Capodimonte', 'street', 2, [[181, 52], [264, 52]]),
+    road('Calata Capodichino', 'main', 3, [[264, 52], [264, EXIT]]),
+    road('Via Nuova Poggioreale', 'main', 3, [[264, 52], [384, 52]]),
+    road('Via del Riposo', 'street', 2, [[298, 52], [298, 82]]),
+    road('Via Santa Maria a Cubito', 'street', 2, [[181, 20], [264, 20]]),
+    road('Corso Secondigliano', 'main', 3, [[264, 20], [384, 20]]),
+    road('Via Labriola', 'street', 2, [[222, 20], [222, EXIT]]),
+    road('Viale della Resistenza', 'street', 2, [[222, 10], [264, 10]]),
+    road('Via Colli Aminei', 'street', 2, [[166, 30], [181, 30]]),
+  );
+  PARKINGS.push({ name: 'Parcheggio Colli Aminei', rect: [161, 28, 166, 33] });
+  PLAZAS.push(
+    { name: 'Tondo di Capodimonte', rect: [176, 54, 187, 60] },
+    { name: 'Aeroporto di Capodichino', rect: [270, 24, 350, 48] },
+    { name: 'Piazza Giovanni Paolo II', rect: [214, 22, 221, 28], palms: true },
+  );
+  PARKS.push(
+    { name: 'Bosco di Capodimonte', rect: [186, 24, 258, 48] },
+    { name: 'Parco dei Camaldoli', rect: [56, 24, 96, 40] },
+    { name: 'Cimitero di Poggioreale', rect: [301, 56, 350, 78] },
+  );
+  LANDMARKS.push(
+    { name: 'Reggia di Capodimonte', rect: [204, 38, 218, 45], height: 3.2, color: '#c9705a', style: 'palace' },
+    { name: 'Ospedale Cardarelli', rect: [106, 26, 122, 38], height: 3.6, color: '#d8d0c0', style: 'palace' },
+    { name: 'Vele di Scampia', rect: [228, 12, 236, 18], height: 6, color: '#bdb7ab', style: 'tower' },
+    { name: 'Vele di Scampia', rect: [240, 12, 248, 18], height: 6, color: '#b3ada1', style: 'tower' },
+    { name: 'Vele di Scampia', rect: [252, 12, 260, 18], height: 5.5, color: '#bdb7ab', style: 'tower' },
+  );
+  METRO_LINES[0].stations.push(
+    { name: 'Rione Alto', at: [125, 47] },
+    { name: 'Colli Aminei', at: [184, 40] },
+    { name: 'Piscinola-Scampia', at: [224, 23] },
+  );
+}
+
+if (OY) {
+  shiftAll();
+  addNorth();
 }

@@ -1,4 +1,4 @@
-import { TILE } from '../data/city.js';
+import { OY, TILE } from '../data/city.js';
 import { collides, isOnHighway, moveCircle, Solid, tileAtPoint } from '../world/map.js';
 import { Tile } from '../world/tiles.js';
 import { keys, steering } from '../input.js';
@@ -17,7 +17,7 @@ export const SHIRT_AZZURRA = '#1d9be0';
 export const player = {
   name: 'Gennaro',
   x: (176 + 0.5) * TILE,
-  y: (70 + 0.5) * TILE,
+  y: (70 + OY + 0.5) * TILE,
   a: -Math.PI / 2,
   mode: 'foot',
   vespa: null,
