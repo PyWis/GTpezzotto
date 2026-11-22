@@ -7,6 +7,7 @@
   "scripts": {
     "start": "npx --yes serve -l 8080 .",
     "test": "node --test tests/*.test.js",
-    "format": "npx --yes prettier@3.3.3 --write \"src/**/*.js\" \"tests/**/*.js\" index.html styles.css"
+    "format": "npx --yes prettier@3.3.3 --write \"src/**/*.js\" \"tests/**/*.js\" index.html styles.css",
+    "sim": "node tools/sim-economia.js"
   }
 }
