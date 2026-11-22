@@ -110,6 +110,12 @@ Nella schermata iniziale si sceglie la mappa (cambiarla ricarica la pagina; ogni
   Capodimonte, l'Ospedale Cardarelli, le Vele di Scampia, l'aeroporto, il Parco dei Camaldoli e il Cimitero di
   Poggioreale. La metro Linea 1 arriva a Rione Alto, Colli Aminei e Piscinola-Scampia.
 
+In entrambe le mappe il **Rettifilo** (Corso Umberto I) porta da Via Medina a Piazza Garibaldi, con l'**Università
+Federico II** fra Via Mezzocannone e il Rettifilo. Nella mappa 2 il **centro storico è più largo** (20 colonne in più
+fra Via Mezzocannone e Via Duomo): nuovi vicoli (Vico Sedil Capuano, Vico Zuroli, Vico Pallonetto a Santa Chiara, Via
+Vicaria Vecchia, Via Forcella, Vico della Pace), San Lorenzo Maggiore, la Chiesa dei Girolamini e Piazza Nicola Amore
+sul Rettifilo.
+
 Si può anche aprire direttamente una mappa con `?mappa=1` o `?mappa=2` nell'indirizzo.
 
 ## Comandi

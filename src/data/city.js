@@ -27,12 +27,18 @@ export function chooseMap(id) {
 
 export const MAP_ID = readMapChoice();
 export const OY = MAP_ID === 2 ? 64 : 0; // righe aggiunte a nord nella mappa 2
+/** Nella mappa 2 il centro storico è più largo: DX colonne nuove subito a est di SPLIT. */
+export const SPLIT = 213;
+export const DX = MAP_ID === 2 ? 20 : 0;
 export const HAS_RADAR = MAP_ID !== 2;
+const X = (x) => (x > SPLIT ? x + DX : x);
+/** Back from the map in use to the coordinates of map 1 (the new columns count as SPLIT). */
+const unX = (x) => (x > SPLIT + DX ? x - DX : Math.min(x, SPLIT));
 /** From the coordinates of map 1 (in tiles) to the map in use. */
-export const at = (x, y) => [x, y + OY];
+export const at = (x, y) => [X(x), y + OY];
 
 export const TILE = 32;
-export const MAP_W = 354;
+export const MAP_W = 354 + DX;
 export const MAP_H = 112 + OY;
 
 const road = (name, kind, width, path) => ({ name, kind, width, path });
@@ -61,7 +67,7 @@ export const ROADS = [
   road('Via Morghen', 'street', 2, [[128, 40], [152, 40]]),
   road('Via San Carlo', 'main', 3, [[181, 62], [204, 62]]),
   road('Via Medina', 'street', 2, [[204, 50], [204, 64]]),
-  road('Corso Umberto I', 'main', 3, [[204, 57], [236, 50]]),
+  road('Rettifilo · Corso Umberto I', 'main', 3, [[204, 57], [236, 50]]),
   road('Via Foria', 'main', 3, [[181, 18], [254, 18]]),
   road('Via Duomo', 'main', 3, [[217, 18], [217, 80]]),
   road('Corso Garibaldi', 'main', 3, [[245, 18], [245, 80]]),
@@ -169,6 +175,7 @@ export const LANDMARKS = [
   { name: 'San Francesco di Paola', shape: 'circle', center: [166, 71], radius: 4.5, height: 3.4, color: '#dcd4c1', style: 'dome' },
   { name: "Castel Sant'Elmo", shape: 'star', center: [160, 38], radius: 5, height: 2.2, color: '#a39b86', style: 'fort' },
   { name: 'Certosa di San Martino', rect: [162, 31, 167, 35], height: 2.6, color: '#e2d8c0', style: 'church' },
+  { name: 'Università Federico II', rect: [197, 51, 203, 56], height: 3.2, color: '#d8c7a4', style: 'palace' },
   { name: 'Duomo di Napoli', rect: [219, 34, 225, 42], height: 3.4, color: '#dccfb3', style: 'church' },
   { name: 'Museo Archeologico', rect: [184, 8, 196, 15], height: 3, color: '#c25a3f', style: 'palace' },
   { name: 'Stazione Centrale', rect: [253, 42, 262, 64], height: 2.4, color: '#e8e6df', style: 'station' },
@@ -285,6 +292,7 @@ const DISTRICT_RULES = [
 ];
 
 export function districtAt(x, y) {
+  x = unX(x);
   if (y < OY) for (const [name, test] of NORTH_DISTRICT_RULES) if (test(x, y)) return name;
   for (const [name, test] of DISTRICT_RULES) if (test(x, y - OY)) return name;
   return 'Napoli';
@@ -454,7 +462,7 @@ function addNorth() {
     { name: 'Cimitero di Poggioreale', rect: [301, 56, 350, 78] },
   );
   LANDMARKS.push(
-    { name: 'Reggia di Capodimonte', rect: [204, 38, 218, 45], height: 3.2, color: '#c9705a', style: 'palace' },
+    { name: 'Reggia di Capodimonte', rect: [216, 38, 230, 45], height: 3.2, color: '#c9705a', style: 'palace' },
     { name: 'Ospedale Cardarelli', rect: [106, 26, 122, 38], height: 3.6, color: '#d8d0c0', style: 'palace' },
     { name: 'Vele di Scampia', rect: [228, 12, 236, 18], height: 6, color: '#bdb7ab', style: 'tower' },
     { name: 'Vele di Scampia', rect: [240, 12, 248, 18], height: 6, color: '#b3ada1', style: 'tower' },
@@ -467,7 +475,50 @@ function addNorth() {
   );
 }
 
+/** Map 2: the city east of SPLIT moves DX columns to the right; what straddles the line gets longer. */
+function stretchX() {
+  const pt = (p) => (p[0] = X(p[0]));
+  const rect = (r) => ((r[0] = X(r[0])), (r[2] = X(r[2])));
+  COASTLINE.forEach(pt);
+  for (const r of ROADS) r.path.forEach(pt);
+  for (const list of [PARKINGS, PLAZAS, PARKS, QUAYS, BEACHES]) for (const x of list) rect(x.rect);
+  BROWNFIELDS.forEach(rect);
+  for (const lm of LANDMARKS) (lm.rect ? rect(lm.rect) : pt(lm.center));
+  for (const f of FOUNTAINS) pt(f.center);
+  WATER_JETS.forEach(pt);
+  for (const f of FUNICULARS) (pt(f.lower.at), pt(f.upper.at));
+  for (const line of METRO_LINES) for (const st of line.stations) pt(st.at);
+  pt(VESUVIUS.center);
+  pt(NISIDA.center);
+  rect(STADIUM_GATE.rect);
+  pt(STADIUM_GATE.pitch);
+  rect(RAILYARD.rect);
+}
+
+/** The new columns of the centro storico: vicoli, San Lorenzo, Piazza Nicola Amore on the Rettifilo. */
+function addCentro() {
+  const y = (v) => v + OY;
+  const x = (v) => SPLIT + v; // dentro le colonne nuove
+  ROADS.push(
+    road('Vico Sedil Capuano', 'vicolo', 1, [[x(3.5), y(39)], [x(3.5), y(55)]]),
+    road('Vico Zuroli', 'vicolo', 1, [[x(9.5), y(39)], [x(9.5), y(54)]]),
+    road('Vico Pallonetto a Santa Chiara', 'vicolo', 1, [[x(15.5), y(39)], [x(15.5), y(53)]]),
+    road('Via Vicaria Vecchia', 'vicolo', 1, [[x(1), y(50.5)], [x(24), y(50.5)]]),
+    road('Via Forcella', 'vicolo', 2, [[x(1), y(26)], [x(24), y(26)]]),
+    road('Vico della Pace', 'vicolo', 1, [[x(9.5), y(18)], [x(9.5), y(39)]]),
+  );
+  PLAZAS.push({ name: 'Piazza Nicola Amore', rect: [x(10), y(52), x(15), y(57)] });
+  LANDMARKS.push(
+    { name: 'San Lorenzo Maggiore', rect: [x(5), y(41), x(9), y(45)], height: 3, color: '#d9c49e', style: 'church' },
+    { name: 'Chiesa dei Girolamini', rect: [x(11), y(30), x(15), y(36)], height: 3, color: '#e0cfa8', style: 'church' },
+  );
+}
+
 if (OY) {
   shiftAll();
   addNorth();
+}
+if (DX) {
+  stretchX();
+  addCentro();
 }
